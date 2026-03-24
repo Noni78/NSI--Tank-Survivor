@@ -704,8 +704,13 @@ class Player:
         self.sprite_base = self.load_sprite()
         self.shield_sprite = self.load_shield_sprite()
         self.aim_angle = 0.0
+        self.fire_orb_level = 0
         self.fire_orbiters = []
         self.fire_ring = False
+        self.fire_ring_level = 0
+        self.fire_ring_radius = 70.0
+        self.fire_ring_burn_dps = 18.0
+        self.fire_ring_outer_offset = 24.0
         self.laser_orb: Optional["LaserOrb"] = None
         self.laser_orb_level = 0
         self.laser_orb_damage = 14
@@ -809,9 +814,40 @@ class Player:
         count = len(self.fire_orbiters)
         if count == 0:
             return
-        step = (math.tau / count)
+        if self.fire_ring:
+            orbit_radius = self.fire_ring_radius + self.fire_ring_outer_offset
+            step = math.tau / count
+            for i, orb in enumerate(self.fire_orbiters):
+                orb.radius = orbit_radius
+                orb.speed = 2.2
+                orb.angle = i * step
+                orb.rel_x = orbit_radius * math.cos(orb.angle)
+                orb.rel_y = orbit_radius * math.sin(orb.angle)
+            return
+
+        if count <= 6:
+            inner_count = count
+            outer_count = 0
+        else:
+            inner_count = math.ceil(count / 2)
+            outer_count = count - inner_count
+
+        inner_radius = 52.0
+        outer_radius = 82.0
+        inner_step = math.tau / max(1, inner_count)
+        outer_step = math.tau / max(1, outer_count) if outer_count > 0 else 0.0
+
         for i, orb in enumerate(self.fire_orbiters):
-            orb.angle = i * step
+            if i < inner_count:
+                orb.radius = inner_radius
+                orb.speed = 2.6
+                orb.angle = i * inner_step
+            else:
+                j = i - inner_count
+                orb.radius = outer_radius
+                orb.speed = 2.1
+                offset = (inner_step * 0.5) if inner_count > 0 else 0.0
+                orb.angle = j * outer_step + offset
             orb.rel_x = orb.radius * math.cos(orb.angle)
             orb.rel_y = orb.radius * math.sin(orb.angle)
 
@@ -894,7 +930,7 @@ class Player:
             pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
 
     def draw_fire_ring(self, screen):
-        ring_radius = 70
+        ring_radius = int(self.fire_ring_radius)
         time_s = pygame.time.get_ticks() * 0.002
         glow = pygame.Surface((ring_radius * 2 + 40, ring_radius * 2 + 40), pygame.SRCALPHA)
         center = (glow.get_width() // 2, glow.get_height() // 2)
@@ -1295,7 +1331,7 @@ UPGRADE_POOL = [
     UpgradeChoice("max_hp", "PV Max+", "Augmente la vie max."),
     UpgradeChoice("fire_rate", "Cadence+", "Tire plus souvent."),
     UpgradeChoice("bullets", "Multi-tir+", "Plus de projectiles par tir."),
-    UpgradeChoice("fire_orb", "Orbe de feu", "Une boule de feu orbitale."),
+    UpgradeChoice("fire_orb", "Orbe de feu", "Ajoute une boule de feu orbitale."),
     UpgradeChoice("rockets", "Lance roquette", "Lance des roquettes."),
 ]
 
@@ -1304,8 +1340,8 @@ EPIC_UPGRADES = [
     UpgradeChoice("electroelf", "Electroelf", "Familier qui lance des eclairs AOE."),
     UpgradeChoice(
         "fire_ring",
-        "EVO: Cercle de feu",
-        "Remplace les orbes par cercle de feu.",
+        "EVO: Cercle de feu+",
+        "Debloque puis renforce le cercle de feu.",
     ),
 ]
 
@@ -1371,7 +1407,7 @@ class Game:
         if key == "bullets":
             return max(0, int((self.player.bullets_per_shot - 1) / 2))
         if key == "fire_orb":
-            return len(self.player.fire_orbiters)
+            return self.player.fire_orb_level
         if key == "laser_orb":
             return self.player.laser_orb_level
         if key == "electroelf":
@@ -1379,7 +1415,7 @@ class Game:
         if key == "rockets":
             return self.player.rocket_level
         if key == "fire_ring":
-            return 1 if self.player.fire_ring else 0
+            return self.player.fire_ring_level
         return 0
 
     def upgrade_max_level(self, key):
@@ -1388,15 +1424,13 @@ class Game:
         if key == "bullets":
             return 30
         if key == "fire_orb":
-            return 6
+            return 14
         if key == "laser_orb":
             return 10
         if key == "electroelf":
             return 5
         if key == "rockets":
             return 19
-        if key == "fire_ring":
-            return 1
         return None
 
     def upgrade_is_maxed(self, key):
@@ -1546,6 +1580,9 @@ class Game:
         elif key == "bullets":
             self.player.bullets_per_shot = min(61, self.player.bullets_per_shot + 2)
         elif key == "fire_orb":
+            if self.player.fire_ring or self.player.fire_orb_level >= 14:
+                return
+            self.player.fire_orb_level += 1
             orb = FireOrbiter(0.0)
             orb.x = self.player.x + orb.radius
             orb.y = self.player.y
@@ -1565,8 +1602,17 @@ class Game:
             self.player.electroelf_damage = base_damage * (1.0 + 0.35 * (self.player.electroelf_level - 1))
             self.player.electroelf_range = 110 + 25 * (self.player.electroelf_level - 1)
         elif key == "fire_ring":
-            self.player.fire_ring = True
-            self.player.fire_orbiters.clear()
+            if not self.player.fire_ring:
+                self.player.fire_ring = True
+                self.player.fire_ring_level = 1
+            else:
+                self.player.fire_ring_level += 1
+                self.player.fire_ring_radius = min(220.0, self.player.fire_ring_radius + 8.0)
+                self.player.fire_ring_burn_dps += 3.0
+            self.player.fire_orbiters = self.player.fire_orbiters[:10]
+            while len(self.player.fire_orbiters) < 10:
+                self.player.fire_orbiters.append(FireOrbiter(0.0))
+            self.player.sync_orbiters()
         elif key == "rockets":
             self.player.rocket_level += 1
             if self.player.rocket_level % 2 == 1:
@@ -1584,7 +1630,7 @@ class Game:
             pool.append(EPIC_UPGRADES[0])
         if not self.upgrade_is_maxed("electroelf"):
             pool.append(EPIC_UPGRADES[1])
-        if len(self.player.fire_orbiters) >= 6 and not self.player.fire_ring:
+        if (self.player.fire_orb_level >= 14 and not self.player.fire_ring) or self.player.fire_ring:
             pool.append(EPIC_UPGRADES[2])
         pool = [u for u in pool if not self.upgrade_is_maxed(u.key)]
         if not pool:
@@ -1872,18 +1918,18 @@ class Game:
                     self.boss.burn_dps = max(self.boss.burn_dps, 10.0)
 
         if self.player.fire_ring:
-            ring_radius = 70
+            ring_radius = self.player.fire_ring_radius
             ring_thickness = 10
             for enemy in self.enemies:
                 dist = distance((enemy.x, enemy.y), (self.player.x, self.player.y))
                 if ring_radius - ring_thickness <= dist <= ring_radius + ring_thickness:
                     enemy.burn_timer = max(enemy.burn_timer, 4.0)
-                    enemy.burn_dps = max(enemy.burn_dps, 18.0)
+                    enemy.burn_dps = max(enemy.burn_dps, self.player.fire_ring_burn_dps)
             if self.boss is not None:
                 dist = distance((self.boss.x, self.boss.y), (self.player.x, self.player.y))
                 if ring_radius - ring_thickness <= dist <= ring_radius + ring_thickness:
                     self.boss.burn_timer = max(self.boss.burn_timer, 4.0)
-                    self.boss.burn_dps = max(self.boss.burn_dps, 18.0)
+                    self.boss.burn_dps = max(self.boss.burn_dps, self.player.fire_ring_burn_dps)
 
         for pickup in list(self.pickups):
             if distance((pickup.x, pickup.y), (self.player.x, self.player.y)) < pickup.radius + self.player.radius:
