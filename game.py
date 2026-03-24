@@ -1264,6 +1264,23 @@ class ElectroElf:
             pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
             pygame.draw.circle(screen, (120, 200, 255), (int(self.x), int(self.y)), self.radius + 6, 2)
 
+
+class DamageNumber:
+    def __init__(self, x, y, amount, color=(255, 225, 120), duration=0.7):
+        self.x = x + random.uniform(-10, 10)
+        self.y = y - random.uniform(6, 16)
+        self.amount = max(0.0, amount)
+        self.duration = duration
+        self.time_left = duration
+        self.float_speed = 46.0
+        self.color = color
+        size_bonus = min(40.0, math.sqrt(self.amount) * 2.4)
+        self.font_size = int(clamp(18 + size_bonus, 18, 64))
+
+    def update(self, dt):
+        self.time_left -= dt
+        self.y -= self.float_speed * dt
+
 @dataclass
 class UpgradeChoice:
     key: str
@@ -1303,9 +1320,10 @@ class Game:
         pygame.display.set_caption("Shooter")
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
         self.clock = pygame.time.Clock()
-        font_path = os.path.join(os.path.dirname(__file__), "genshin.ttf")
-        self.font = pygame.font.Font(font_path, 18)
-        self.big_font = pygame.font.Font(font_path, 28)
+        self.font_path = os.path.join(os.path.dirname(__file__), "genshin.ttf")
+        self.font = pygame.font.Font(self.font_path, 18)
+        self.big_font = pygame.font.Font(self.font_path, 28)
+        self.damage_fonts = {}
 
         self.player = Player()
         self.enemies = []
@@ -1321,6 +1339,7 @@ class Game:
         self.boss_zones = []
         self.pickups = []
         self.gems = []
+        self.damage_numbers = []
         self.wave = 1
         self.state = "playing"
         self.score = 0
@@ -1426,6 +1445,7 @@ class Game:
         self.boss_zones.clear()
         self.pickups.clear()
         self.gems.clear()
+        self.damage_numbers.clear()
         self.wave = 1
         self.score = 0
         self.upgrade_choices = []
@@ -1698,6 +1718,34 @@ class Game:
     def boss_contact_damage(self):
         return self.boss_attack_damage() * 0.4
 
+    def get_damage_font(self, size):
+        size = int(clamp(size, 16, 72))
+        if size not in self.damage_fonts:
+            self.damage_fonts[size] = pygame.font.Font(self.font_path, size)
+        return self.damage_fonts[size]
+
+    def spawn_damage_number(self, x, y, amount, color=(255, 225, 120)):
+        if amount <= 0:
+            return
+        self.damage_numbers.append(DamageNumber(x, y, amount, color=color))
+
+    def damage_enemy(self, enemy, amount):
+        if enemy not in self.enemies or amount <= 0 or enemy.hp <= 0:
+            return
+        enemy.hp -= amount
+        self.spawn_damage_number(enemy.x, enemy.y, amount)
+        if enemy.hp <= 0 and enemy in self.enemies:
+            self.enemies.remove(enemy)
+            self.on_enemy_killed(enemy)
+
+    def damage_boss(self, amount):
+        if self.boss is None or amount <= 0 or self.boss.hp <= 0:
+            return
+        self.boss.hp -= amount
+        self.spawn_damage_number(self.boss.x, self.boss.y, amount, color=(255, 175, 90))
+        if self.boss.hp <= 0:
+            self.on_boss_killed()
+
     def try_activate_ultimate(self):
         if self.player.ultimate_charge < self.player.ultimate_max:
             return False
@@ -1709,15 +1757,10 @@ class Game:
         self.ultimate_pulses.append(UltimatePulse(self.player.x, self.player.y, radius))
         for enemy in list(self.enemies):
             if distance((enemy.x, enemy.y), (self.player.x, self.player.y)) <= radius:
-                enemy.hp -= self.player.damage * 2.2
-                if enemy.hp <= 0 and enemy in self.enemies:
-                    self.enemies.remove(enemy)
-                    self.on_enemy_killed(enemy)
+                self.damage_enemy(enemy, self.player.damage * 2.2)
         if self.boss is not None:
             if distance((self.boss.x, self.boss.y), (self.player.x, self.player.y)) <= radius:
-                self.boss.hp -= self.player.damage * 2.2
-                if self.boss.hp <= 0:
-                    self.on_boss_killed()
+                self.damage_boss(self.player.damage * 2.2)
         return True
 
     def try_activate_shockwave(self):
@@ -1730,16 +1773,11 @@ class Game:
         for enemy in list(self.enemies):
             dist = distance((enemy.x, enemy.y), (self.player.x, self.player.y))
             if dist <= radius:
-                enemy.hp -= damage
-                if enemy.hp <= 0 and enemy in self.enemies:
-                    self.enemies.remove(enemy)
-                    self.on_enemy_killed(enemy)
+                self.damage_enemy(enemy, damage)
         if self.boss is not None:
             dist = distance((self.boss.x, self.boss.y), (self.player.x, self.player.y))
             if dist <= radius:
-                self.boss.hp -= damage
-                if self.boss.hp <= 0:
-                    self.on_boss_killed()
+                self.damage_boss(damage)
         return True
 
     def fire_ultimate_beam(self, target_pos):
@@ -1801,19 +1839,14 @@ class Game:
             if proj.owner == "player":
                 for enemy in list(self.enemies):
                     if distance((proj.x, proj.y), (enemy.x, enemy.y)) < proj.radius + enemy.radius:
-                        enemy.hp -= proj.damage
+                        self.damage_enemy(enemy, proj.damage)
                         if proj in self.projectiles:
                             self.projectiles.remove(proj)
-                        if enemy.hp <= 0:
-                            self.enemies.remove(enemy)
-                            self.on_enemy_killed(enemy)
                         break
                 if proj in self.projectiles and self.boss is not None:
                     if distance((proj.x, proj.y), (self.boss.x, self.boss.y)) < proj.radius + self.boss.radius:
-                        self.boss.hp -= proj.damage
+                        self.damage_boss(proj.damage)
                         self.projectiles.remove(proj)
-                        if self.boss.hp <= 0:
-                            self.on_boss_killed()
             else:
                 if distance((proj.x, proj.y), (self.player.x, self.player.y)) < proj.radius + self.player.radius:
                     self.player.take_damage(10)
@@ -1994,16 +2027,11 @@ class Game:
                     for enemy in list(self.enemies):
                         dist = point_segment_distance(enemy.x, enemy.y, sx, sy, ex, ey)
                         if dist <= enemy.radius + beam_width:
-                            enemy.hp -= self.player.laser_orb_damage
-                            if enemy.hp <= 0 and enemy in self.enemies:
-                                self.enemies.remove(enemy)
-                                self.on_enemy_killed(enemy)
+                            self.damage_enemy(enemy, self.player.laser_orb_damage)
                     if self.boss is not None:
                         dist = point_segment_distance(self.boss.x, self.boss.y, sx, sy, ex, ey)
                         if dist <= self.boss.radius + beam_width:
-                            self.boss.hp -= self.player.laser_orb_damage
-                            if self.boss.hp <= 0:
-                                self.on_boss_killed()
+                            self.damage_boss(self.player.laser_orb_damage)
         if self.player.electroelf_level > 0:
             if self.player.electroelf is None:
                 self.player.electroelf = ElectroElf()
@@ -2103,15 +2131,10 @@ class Game:
             if hit or hit_boss:
                 for enemy in list(self.enemies):
                     if distance((rocket.x, rocket.y), (enemy.x, enemy.y)) <= rocket.explosion_radius:
-                        enemy.hp -= rocket.damage
-                        if enemy.hp <= 0 and enemy in self.enemies:
-                            self.enemies.remove(enemy)
-                            self.on_enemy_killed(enemy)
+                        self.damage_enemy(enemy, rocket.damage)
                 if self.boss is not None:
                     if distance((rocket.x, rocket.y), (self.boss.x, self.boss.y)) <= rocket.explosion_radius:
-                        self.boss.hp -= rocket.damage
-                        if self.boss.hp <= 0:
-                            self.on_boss_killed()
+                        self.damage_boss(rocket.damage)
                 self.explosions.append(
                     Explosion(rocket.x, rocket.y, rocket.explosion_radius, duration=0.25)
                 )
@@ -2143,15 +2166,10 @@ class Game:
                 damage = self.player.damage * 0.6
                 for enemy in list(self.enemies):
                     if distance((enemy.x, enemy.y), (zone.x, zone.y)) <= zone.radius:
-                        enemy.hp -= damage
-                        if enemy.hp <= 0 and enemy in self.enemies:
-                            self.enemies.remove(enemy)
-                            self.on_enemy_killed(enemy)
+                        self.damage_enemy(enemy, damage)
                 if self.boss is not None:
                     if distance((self.boss.x, self.boss.y), (zone.x, zone.y)) <= zone.radius:
-                        self.boss.hp -= damage
-                        if self.boss.hp <= 0:
-                            self.on_boss_killed()
+                        self.damage_boss(damage)
             if zone.time_left <= 0:
                 self.ultimate_zones.remove(zone)
 
@@ -2170,19 +2188,19 @@ class Game:
                 strike.should_damage = False
                 for enemy in list(self.enemies):
                     if distance((enemy.x, enemy.y), (strike.ex, strike.ey)) <= strike.radius:
-                        enemy.hp -= strike.damage
-                        if enemy.hp <= 0 and enemy in self.enemies:
-                            self.enemies.remove(enemy)
-                            self.on_enemy_killed(enemy)
+                        self.damage_enemy(enemy, strike.damage)
                 if self.boss is not None:
                     if distance((self.boss.x, self.boss.y), (strike.ex, strike.ey)) <= strike.radius:
-                        self.boss.hp -= strike.damage
-                        if self.boss.hp <= 0:
-                            self.on_boss_killed()
+                        self.damage_boss(strike.damage)
             if strike.time_left <= 0:
                 self.lightning_effects.remove(strike)
 
         self.handle_collisions()
+
+        for dmg in list(self.damage_numbers):
+            dmg.update(dt)
+            if dmg.time_left <= 0:
+                self.damage_numbers.remove(dmg)
 
         if self.state == "playing" and not self.enemies and self.boss is None:
             self.wave += 1
@@ -2561,6 +2579,21 @@ class Game:
             beam.draw(self.screen)
         for strike in self.lightning_effects:
             strike.draw(self.screen)
+        for dmg in self.damage_numbers:
+            ratio = clamp(dmg.time_left / max(0.001, dmg.duration), 0.0, 1.0)
+            alpha = int(255 * ratio)
+            value = max(1, int(round(dmg.amount)))
+            font = self.get_damage_font(dmg.font_size)
+            text = str(value)
+            text_surf = font.render(text, True, dmg.color)
+            shadow_surf = font.render(text, True, (25, 18, 18))
+            if alpha < 255:
+                text_surf.set_alpha(alpha)
+                shadow_surf.set_alpha(alpha)
+            x = int(dmg.x - text_surf.get_width() / 2)
+            y = int(dmg.y - text_surf.get_height() / 2)
+            self.screen.blit(shadow_surf, (x + 2, y + 2))
+            self.screen.blit(text_surf, (x, y))
         if self.player.electroelf:
             self.player.electroelf.draw(self.screen)
         self.player.draw(self.screen)
