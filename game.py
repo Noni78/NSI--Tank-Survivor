@@ -1451,6 +1451,9 @@ class Game:
         while self.player.xp >= self.player.next_xp:
             self.player.xp -= self.player.next_xp
             self.player.level += 1
+            self.player.damage += 4
+            self.player.max_hp += 15
+            self.player.hp = min(self.player.max_hp, self.player.hp + 15)
             self.player.next_xp = int(6 + (self.player.level ** 1.6) * 4)
             self.pending_upgrades += 1
         if self.pending_upgrades > 0 and self.state == "playing":
@@ -2328,7 +2331,7 @@ class Game:
         wave_bar_y = wave_rect.y + 18
         if self.boss is not None and self.boss.max_hp > 0:
             wave_ratio = clamp(1.0 - (self.boss.hp / self.boss.max_hp), 0, 1)
-            wave_label = f"BOSS  Vague {self.wave}"
+            wave_label = "BOSS"
             wave_fill = (230, 90, 90)
         elif self.wave_total > 0:
             wave_ratio = clamp(self.wave_killed / self.wave_total, 0, 1)
