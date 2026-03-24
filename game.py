@@ -699,6 +699,7 @@ class Player:
         self.invincible = 0.0
         self.multishot = 0.0
         self.haste = 0.0
+        self.heal_boost = 0.0
         self.hurt_timer = 0.0
         self.sprite_base = self.load_sprite()
         self.shield_sprite = self.load_shield_sprite()
@@ -723,6 +724,10 @@ class Player:
         self.ultimate_charge = 0
         self.ultimate_max = 20
         self.ultimate_beam_time = 0.0
+        self.shockwave_cooldown = 7.0
+        self.shockwave_timer = self.shockwave_cooldown
+        self.shockwave_radius = 240
+        self.shockwave_damage = 0.9
         self.rocket_level = 0
         self.rocket_count = 0
         self.rocket_cooldown = 5.0
@@ -786,8 +791,10 @@ class Player:
         self.invincible = max(0.0, self.invincible - dt)
         self.multishot = max(0.0, self.multishot - dt)
         self.haste = max(0.0, self.haste - dt)
+        self.heal_boost = max(0.0, self.heal_boost - dt)
         self.hurt_timer = max(0.0, self.hurt_timer - dt)
-        self.hp = min(self.max_hp, self.hp + self.max_hp * 0.01 * dt)
+        heal_mult = 5.0 if self.heal_boost > 0 else 1.0
+        self.hp = min(self.max_hp, self.hp + self.max_hp * 0.01 * heal_mult * dt)
         if self.laser_orb_beam_timer > 0:
             self.laser_orb_beam_timer = max(0.0, self.laser_orb_beam_timer - dt)
         if self.ultimate_beam_time > 0:
@@ -1168,6 +1175,29 @@ class UltimatePulse:
         screen.blit(surf, (int(self.x - r - 4), int(self.y - r - 4)))
 
 
+class Shockwave:
+    def __init__(self, x, y, radius, duration=0.35):
+        self.x = x
+        self.y = y
+        self.radius = radius
+        self.duration = duration
+        self.time_left = duration
+
+    def update(self, dt):
+        self.time_left -= dt
+
+    def draw(self, screen):
+        if self.time_left <= 0:
+            return
+        t = 1.0 - (self.time_left / self.duration)
+        r = int(self.radius * t)
+        alpha = int(200 * (1.0 - t))
+        surf = pygame.Surface((r * 2 + 8, r * 2 + 8), pygame.SRCALPHA)
+        pygame.draw.circle(surf, (120, 220, 255, alpha), (r + 4, r + 4), r, 6)
+        pygame.draw.circle(surf, (180, 240, 255, alpha), (r + 4, r + 4), max(2, r // 6), 2)
+        screen.blit(surf, (int(self.x - r - 4), int(self.y - r - 4)))
+
+
 class ElectroElf:
     def __init__(self):
         self.x = random.uniform(60, WIDTH - 60)
@@ -1286,6 +1316,7 @@ class Game:
         self.ultimate_beams = []
         self.ultimate_pulses = []
         self.ultimate_zones = []
+        self.shockwaves = []
         self.boss = None
         self.boss_zones = []
         self.pickups = []
@@ -1390,6 +1421,7 @@ class Game:
         self.ultimate_beams.clear()
         self.ultimate_pulses.clear()
         self.ultimate_zones.clear()
+        self.shockwaves.clear()
         self.boss = None
         self.boss_zones.clear()
         self.pickups.clear()
@@ -1413,6 +1445,7 @@ class Game:
         for key, filename in [
             ("multishot", "multishot.png"),
             ("haste", "haste.png"),
+            ("heal", "heal.png"),
         ]:
             path = os.path.join(base, filename)
             if os.path.exists(path):
@@ -1464,7 +1497,7 @@ class Game:
             x, y = random_spawn_point()
             kind = random.choices(
                 ["basic", "fast", "tank", "shooter"],
-                weights=[50, 20, 20, 10 + wave * 2],
+                weights=[50, 50 / 3, 50 / 3, 50 / 3],
             )[0]
             self.enemies.append(Enemy(x, y, kind, wave))
         if wave % 5 == 0:
@@ -1575,13 +1608,20 @@ class Game:
         panel_w = 520
         panel_h = 220
         panel_x = WIDTH / 2 - panel_w / 2
-        panel_y = 140
-        y = panel_y + 110
+        panel_y = HEIGHT / 2 - panel_h / 2
+        gap = 16
+        block_h = h * 2 + gap
+        row_y = panel_y + (panel_h - block_h) / 2 + 10
         x1 = panel_x + panel_w / 2 - w - 10
         x2 = panel_x + panel_w / 2 + 10
-        self.ui_buttons.append({"rect": pygame.Rect(x1, y, w, h), "action": "resume"})
-        self.ui_buttons.append({"rect": pygame.Rect(x2, y, w, h), "action": "quit"})
-        self.ui_buttons.append({"rect": pygame.Rect(panel_x + panel_w / 2 - w / 2, y + 60, w, h), "action": "replay"})
+        self.ui_buttons.append({"rect": pygame.Rect(x1, row_y, w, h), "action": "resume"})
+        self.ui_buttons.append({"rect": pygame.Rect(x2, row_y, w, h), "action": "quit"})
+        self.ui_buttons.append(
+            {
+                "rect": pygame.Rect(panel_x + panel_w / 2 - w / 2, row_y + h + gap, w, h),
+                "action": "replay",
+            }
+        )
 
     def build_cheat_buttons(self):
         buttons = []
@@ -1664,7 +1704,7 @@ class Game:
         if self.player.ultimate_beam_time > 0:
             return False
         self.player.ultimate_charge = 0
-        self.player.ultimate_beam_time = 15.0
+        self.player.ultimate_beam_time = 10.0
         radius = 220
         self.ultimate_pulses.append(UltimatePulse(self.player.x, self.player.y, radius))
         for enemy in list(self.enemies):
@@ -1676,6 +1716,28 @@ class Game:
         if self.boss is not None:
             if distance((self.boss.x, self.boss.y), (self.player.x, self.player.y)) <= radius:
                 self.boss.hp -= self.player.damage * 2.2
+                if self.boss.hp <= 0:
+                    self.on_boss_killed()
+        return True
+
+    def try_activate_shockwave(self):
+        if self.player.shockwave_timer < self.player.shockwave_cooldown:
+            return False
+        self.player.shockwave_timer = 0.0
+        radius = self.player.shockwave_radius
+        damage = self.player.damage * self.player.shockwave_damage + self.wave * 4.0
+        self.shockwaves.append(Shockwave(self.player.x, self.player.y, radius))
+        for enemy in list(self.enemies):
+            dist = distance((enemy.x, enemy.y), (self.player.x, self.player.y))
+            if dist <= radius:
+                enemy.hp -= damage
+                if enemy.hp <= 0 and enemy in self.enemies:
+                    self.enemies.remove(enemy)
+                    self.on_enemy_killed(enemy)
+        if self.boss is not None:
+            dist = distance((self.boss.x, self.boss.y), (self.player.x, self.player.y))
+            if dist <= radius:
+                self.boss.hp -= damage
                 if self.boss.hp <= 0:
                     self.on_boss_killed()
         return True
@@ -1799,7 +1861,7 @@ class Game:
                 elif pickup.type == "haste":
                     self.player.haste = 6.0
                 elif pickup.type == "heal":
-                    self.player.hp = min(self.player.max_hp, self.player.hp + 25)
+                    self.player.heal_boost = 5.0
                 self.pickups.remove(pickup)
 
         for gem in list(self.gems):
@@ -1865,6 +1927,10 @@ class Game:
             while self.player.rocket_timer >= self.player.rocket_cooldown:
                 self.player.rocket_timer -= self.player.rocket_cooldown
                 self.fire_rockets()
+        if self.player.shockwave_timer < self.player.shockwave_cooldown:
+            self.player.shockwave_timer = min(
+                self.player.shockwave_cooldown, self.player.shockwave_timer + dt
+            )
         manual_fire = pygame.mouse.get_pressed(num_buttons=3)[0] or keys[pygame.K_SPACE]
         target_pos = pygame.mouse.get_pos()
         if not manual_fire:
@@ -2056,6 +2122,11 @@ class Game:
             if explosion.time_left <= 0:
                 self.explosions.remove(explosion)
 
+        for shock in list(self.shockwaves):
+            shock.update(dt)
+            if shock.time_left <= 0:
+                self.shockwaves.remove(shock)
+
         for beam in list(self.ultimate_beams):
             beam.update(dt)
             if beam.time_left <= 0:
@@ -2221,32 +2292,67 @@ class Game:
             (score_rect.centerx - score_text.get_width() / 2, score_rect.y + 10),
         )
 
-        # Buff panel (left, under core)
+        # Buff panel (left, under core) - order by remaining time (desc)
         buff_x = margin
         buff_y = left_rect.bottom + 10
         buff_w = 220
-        buff_h = 64
-        if self.player.multishot > 0 or self.player.haste > 0:
+        row_h = 22
+        buffs = []
+        if self.player.multishot > 0:
+            buffs.append(
+                {
+                    "key": "multishot",
+                    "time": self.player.multishot,
+                    "max_time": 12.0,
+                    "color": (90, 220, 140),
+                    "fallback": WHITE,
+                }
+            )
+        if self.player.haste > 0:
+            buffs.append(
+                {
+                    "key": "haste",
+                    "time": self.player.haste,
+                    "max_time": 6.0,
+                    "color": (240, 210, 90),
+                    "fallback": GREEN,
+                }
+            )
+        if self.player.heal_boost > 0:
+            buffs.append(
+                {
+                    "key": "heal",
+                    "time": self.player.heal_boost,
+                    "max_time": 5.0,
+                    "color": (80, 220, 120),
+                    "fallback": GREEN,
+                }
+            )
+        if buffs:
+            buffs.sort(key=lambda b: b["time"], reverse=True)
+            buff_h = 20 + row_h * len(buffs)
             buff_rect = pygame.Rect(buff_x, buff_y, buff_w, buff_h)
             draw_panel(buff_rect, accent=False)
             row_y = buff_rect.y + 10
-            if self.player.multishot > 0:
-                ratio = clamp(self.player.multishot / 12.0, 0, 1)
-                draw_bar(buff_rect.x + 32, row_y, buff_w - 48, 10, ratio, (90, 220, 140), (30, 36, 46))
-                icon = self.ui_icons.get("multishot")
+            for buff in buffs:
+                ratio = clamp(buff["time"] / buff["max_time"], 0, 1)
+                draw_bar(
+                    buff_rect.x + 32,
+                    row_y,
+                    buff_w - 48,
+                    10,
+                    ratio,
+                    buff["color"],
+                    (30, 36, 46),
+                )
+                icon = self.ui_icons.get(buff["key"])
                 if icon:
                     self.screen.blit(icon, (buff_rect.x + 6, row_y - 6))
                 else:
-                    pygame.draw.circle(self.screen, WHITE, (buff_rect.x + 14, row_y + 4), 5)
-                row_y += 22
-            if self.player.haste > 0:
-                ratio = clamp(self.player.haste / 6.0, 0, 1)
-                draw_bar(buff_rect.x + 32, row_y, buff_w - 48, 10, ratio, (240, 210, 90), (30, 36, 46))
-                icon = self.ui_icons.get("haste")
-                if icon:
-                    self.screen.blit(icon, (buff_rect.x + 6, row_y - 8))
-                else:
-                    pygame.draw.circle(self.screen, GREEN, (buff_rect.x + 14, row_y + 4), 5)
+                    pygame.draw.circle(
+                        self.screen, buff["fallback"], (buff_rect.x + 14, row_y + 4), 5
+                    )
+                row_y += row_h
 
         # XP panel (bottom-left)
         xp_w = 360
@@ -2268,6 +2374,31 @@ class Game:
         draw_bar(ult_rect.x + 12, ult_rect.y + 12, ult_w - 24, 10, ult_ratio, ult_color, (30, 36, 46))
         ult_label = self.font.render("ULT (A)", True, WHITE)
         self.screen.blit(ult_label, (ult_rect.centerx - ult_label.get_width() / 2, ult_rect.y - 8))
+
+        # Shockwave panel (above ULT)
+        shock_w = 240
+        shock_h = 28
+        shock_rect = pygame.Rect(
+            WIDTH - shock_w - margin, ult_rect.y - shock_h - 10, shock_w, shock_h
+        )
+        draw_panel(shock_rect, accent=False)
+        shock_ratio = clamp(
+            self.player.shockwave_timer / max(0.01, self.player.shockwave_cooldown), 0, 1
+        )
+        draw_bar(
+            shock_rect.x + 10,
+            shock_rect.y + 10,
+            shock_w - 20,
+            8,
+            shock_ratio,
+            (120, 220, 255),
+            (30, 36, 46),
+        )
+        shock_label = self.font.render("ONDE (E)", True, WHITE)
+        self.screen.blit(
+            shock_label,
+            (shock_rect.centerx - shock_label.get_width() / 2, shock_rect.y - 8),
+        )
 
     def draw_cheat_buttons(self):
         if not self.cheats_enabled:
@@ -2379,7 +2510,7 @@ class Game:
         self.screen.blit(overlay, (0, 0))
         panel_w = 520
         panel_h = 220
-        panel_rect = pygame.Rect(WIDTH / 2 - panel_w / 2, 140, panel_w, panel_h)
+        panel_rect = pygame.Rect(WIDTH / 2 - panel_w / 2, HEIGHT / 2 - panel_h / 2, panel_w, panel_h)
         pygame.draw.rect(self.screen, (18, 22, 30), panel_rect, border_radius=14)
         pygame.draw.rect(self.screen, (90, 140, 200), panel_rect, 2, border_radius=14)
         inner = panel_rect.inflate(-16, -16)
@@ -2420,6 +2551,8 @@ class Game:
             rocket.draw(self.screen)
         for explosion in self.explosions:
             explosion.draw(self.screen)
+        for shock in self.shockwaves:
+            shock.draw(self.screen)
         for pulse in self.ultimate_pulses:
             pulse.draw(self.screen)
         for zone in self.ultimate_zones:
@@ -2459,6 +2592,9 @@ class Game:
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_a:
                     if self.state == "playing":
                         self.try_activate_ultimate()
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_e:
+                    if self.state == "playing":
+                        self.try_activate_shockwave()
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     if self.state == "upgrade":
                         for btn in self.ui_buttons:
