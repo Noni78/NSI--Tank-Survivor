@@ -1558,22 +1558,30 @@ class Game:
 
     def build_game_over_buttons(self):
         self.ui_buttons = []
-        w, h = 220, 60
-        y = 300
-        x1 = WIDTH / 2 - w - 10
-        x2 = WIDTH / 2 + 10
+        w, h = 200, 50
+        panel_w = 520
+        panel_h = 240
+        panel_x = WIDTH / 2 - panel_w / 2
+        panel_y = 120
+        y = panel_y + panel_h - h - 24
+        x1 = panel_x + panel_w / 2 - w - 10
+        x2 = panel_x + panel_w / 2 + 10
         self.ui_buttons.append({"rect": pygame.Rect(x1, y, w, h), "action": "replay"})
         self.ui_buttons.append({"rect": pygame.Rect(x2, y, w, h), "action": "quit"})
 
     def build_pause_buttons(self):
         self.ui_buttons = []
-        w, h = 220, 60
-        y = 300
-        x1 = WIDTH / 2 - w - 10
-        x2 = WIDTH / 2 + 10
+        w, h = 200, 50
+        panel_w = 520
+        panel_h = 220
+        panel_x = WIDTH / 2 - panel_w / 2
+        panel_y = 140
+        y = panel_y + 110
+        x1 = panel_x + panel_w / 2 - w - 10
+        x2 = panel_x + panel_w / 2 + 10
         self.ui_buttons.append({"rect": pygame.Rect(x1, y, w, h), "action": "resume"})
         self.ui_buttons.append({"rect": pygame.Rect(x2, y, w, h), "action": "quit"})
-        self.ui_buttons.append({"rect": pygame.Rect(WIDTH / 2 - w / 2, y + 80, w, h), "action": "replay"})
+        self.ui_buttons.append({"rect": pygame.Rect(panel_x + panel_w / 2 - w / 2, y + 60, w, h), "action": "replay"})
 
     def build_cheat_buttons(self):
         buttons = []
@@ -2123,106 +2131,143 @@ class Game:
                 self.gem_rush_timer = 0.0
 
     def draw_ui(self):
-        base_x = 20
-        base_y = 15
-        hp_w = 240
-        bar_h = 20
+        def draw_panel(rect, accent=True):
+            panel = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+            panel.fill((18, 22, 30, 210))
+            pygame.draw.rect(panel, (60, 90, 130, 220), panel.get_rect(), 2, border_radius=10)
+            if accent:
+                inner = panel.get_rect().inflate(-8, -8)
+                pygame.draw.rect(panel, (90, 200, 255, 160), inner, 1, border_radius=8)
+            self.screen.blit(panel, rect.topleft)
 
-        pygame.draw.rect(self.screen, (40, 40, 45), (base_x, base_y, hp_w, bar_h))
+        def draw_bar(x, y, w, h, ratio, fill, back):
+            pygame.draw.rect(self.screen, back, (x, y, w, h), border_radius=4)
+            pygame.draw.rect(self.screen, fill, (x, y, w * ratio, h), border_radius=4)
+
+        margin = 16
+        top_y = 12
+
+        # Left core panel (HP + Fire + Shield/Rocket)
+        left_w = 380
+        left_h = 68
+        left_rect = pygame.Rect(margin, top_y, left_w, left_h)
+        draw_panel(left_rect)
+
         hp_ratio = clamp(self.player.hp / self.player.max_hp, 0, 1)
-        pygame.draw.rect(self.screen, RED, (base_x, base_y, hp_w * hp_ratio, bar_h))
-        hp_text = self.font.render(f"PV: {int(self.player.hp)}", True, WHITE)
-        self.screen.blit(hp_text, (base_x + 4, base_y - 2))
-
-        right_x = base_x + hp_w + 10
-        if self.player.shield > 0:
-            shield_w = 110
-            ratio = clamp(self.player.shield / 6.0, 0, 1)
-            pygame.draw.rect(self.screen, (60, 60, 70), (right_x, base_y, shield_w, bar_h))
-            pygame.draw.rect(self.screen, PURPLE, (right_x, base_y, shield_w * ratio, bar_h))
-            right_x += shield_w + 10
-
-        if self.player.rocket_count > 0:
-            rocket_w = 120
-            ratio = clamp(self.player.rocket_timer / self.player.rocket_cooldown, 0, 1)
-            pygame.draw.rect(self.screen, (60, 60, 70), (right_x, base_y, rocket_w, bar_h))
-            pygame.draw.rect(self.screen, (255, 150, 60), (right_x, base_y, rocket_w * ratio, bar_h))
-
         fire_ratio = 1.0
         if self.player.fire_rate > 0:
             fire_ratio = clamp(1.0 - (self.player.fire_timer / self.player.fire_rate), 0, 1)
-        pygame.draw.rect(self.screen, (60, 60, 70), (base_x, base_y + bar_h + 5, hp_w, bar_h))
-        pygame.draw.rect(self.screen, YELLOW, (base_x, base_y + bar_h + 5, hp_w * fire_ratio, bar_h))
 
-        bar_x = 20
-        bar_w = 150
-        gap = 8
-        y = base_y + bar_h * 2 + 10
-        if self.player.multishot > 0:
-            icon = self.ui_icons.get("multishot")
-            if icon:
-                self.screen.blit(icon, (bar_x - 2, y - 3))
-            else:
-                pygame.draw.circle(self.screen, WHITE, (bar_x + 9, y), 6)
-            ratio = clamp(self.player.multishot / 12.0, 0, 1)
-            pygame.draw.rect(self.screen, (60, 60, 70), (bar_x + 22, y, bar_w, bar_h))
-            pygame.draw.rect(self.screen, GREEN, (bar_x + 22, y, bar_w * ratio, bar_h))
-            y += bar_h + gap
-        if self.player.haste > 0:
-            icon = self.ui_icons.get("haste")
-            if icon:
-                self.screen.blit(icon, (bar_x, y - 5))
-            else:
-                pygame.draw.circle(self.screen, GREEN, (bar_x + 9, y), 6)
-            ratio = clamp(self.player.haste / 6.0, 0, 1)
-            pygame.draw.rect(self.screen, (60, 60, 70), (bar_x + 22, y, bar_w, bar_h))
-            pygame.draw.rect(self.screen, YELLOW, (bar_x + 22, y, bar_w * ratio, bar_h))
+        bar_x = left_rect.x + 14
+        hp_y = left_rect.y + 12
+        fire_y = left_rect.y + 36
+        main_bar_w = 230
+        draw_bar(bar_x, hp_y, main_bar_w, 14, hp_ratio, (230, 90, 90), (30, 36, 46))
+        draw_bar(bar_x, fire_y, main_bar_w, 10, fire_ratio, (240, 210, 90), (30, 36, 46))
 
-        score_text = self.font.render(f"Score: {self.score}", True, WHITE)
-        self.screen.blit(score_text, (WIDTH - score_text.get_width() - 20, 20))
+        hp_text = self.font.render(f"PV {int(self.player.hp)}", True, WHITE)
+        self.screen.blit(hp_text, (bar_x + 6, hp_y - 4))
 
-        wave_bar_w = 520
-        wave_bar_h = 14
-        wave_x = WIDTH / 2 - wave_bar_w / 2
-        wave_y = 24
-        pygame.draw.rect(self.screen, (40, 40, 45), (wave_x, wave_y, wave_bar_w, wave_bar_h))
+        mini_w = 96
+        mini_x = left_rect.right - mini_w - 12
+        shield_ratio = clamp(self.player.shield / 6.0, 0, 1)
+        rocket_ratio = 0.0
+        if self.player.rocket_count > 0:
+            rocket_ratio = clamp(self.player.rocket_timer / self.player.rocket_cooldown, 0, 1)
+        draw_bar(mini_x, hp_y + 2, mini_w, 10, shield_ratio, PURPLE, (30, 36, 46))
+        draw_bar(mini_x, fire_y, mini_w, 10, rocket_ratio, (255, 150, 60), (30, 36, 46))
+        shield_label = self.font.render("SHD", True, WHITE)
+        rocket_label = self.font.render("RKT", True, WHITE)
+        self.screen.blit(shield_label, (mini_x + 4, hp_y - 6))
+        self.screen.blit(rocket_label, (mini_x + 4, fire_y - 6))
+
+        # Center wave/boss panel
+        wave_w = 560
+        wave_h = 40
+        wave_x = WIDTH / 2 - wave_w / 2
+        wave_rect = pygame.Rect(wave_x, top_y, wave_w, wave_h)
+        draw_panel(wave_rect)
+        wave_bar_w = wave_w - 40
+        wave_bar_h = 12
+        wave_bar_x = wave_rect.x + 20
+        wave_bar_y = wave_rect.y + 18
         if self.boss is not None and self.boss.max_hp > 0:
             wave_ratio = clamp(1.0 - (self.boss.hp / self.boss.max_hp), 0, 1)
+            wave_label = f"BOSS  Vague {self.wave}"
+            wave_fill = (230, 90, 90)
         elif self.wave_total > 0:
             wave_ratio = clamp(self.wave_killed / self.wave_total, 0, 1)
+            wave_label = f"Vague {self.wave}"
+            wave_fill = (120, 200, 255)
         else:
             wave_ratio = 0.0
-        pygame.draw.rect(
-            self.screen,
-            RED,
-            (wave_x, wave_y, wave_bar_w * wave_ratio, wave_bar_h),
-        )
-        wave_text = self.font.render(f"Vague {self.wave}", True, WHITE)
+            wave_label = f"Vague {self.wave}"
+            wave_fill = (120, 200, 255)
+        draw_bar(wave_bar_x, wave_bar_y, wave_bar_w, wave_bar_h, wave_ratio, wave_fill, (30, 36, 46))
+        wave_text = self.font.render(wave_label, True, WHITE)
         self.screen.blit(
             wave_text,
-            (wave_x + wave_bar_w / 2 - wave_text.get_width() / 2, wave_y - 22),
+            (wave_rect.centerx - wave_text.get_width() / 2, wave_rect.y + 2),
         )
 
-        xp_bar_w = 320
-        xp_bar_h = 12
-        xp_x = 20
-        xp_y = HEIGHT - xp_bar_h - 15
-        pygame.draw.rect(self.screen, (40, 40, 45), (xp_x, xp_y, xp_bar_w, xp_bar_h))
-        xp_ratio = clamp(self.player.xp / max(1, self.player.next_xp), 0, 1)
-        pygame.draw.rect(self.screen, CYAN, (xp_x, xp_y, xp_bar_w * xp_ratio, xp_bar_h))
-        lvl_text = self.font.render(f"Niv {self.player.level}", True, WHITE)
-        self.screen.blit(lvl_text, (xp_x + xp_bar_w + 10, xp_y - 4))
+        # Score panel (top-right)
+        score_w = 210
+        score_h = 40
+        score_rect = pygame.Rect(WIDTH - score_w - margin, top_y, score_w, score_h)
+        draw_panel(score_rect)
+        score_text = self.font.render(f"SCORE {self.score}", True, WHITE)
+        self.screen.blit(
+            score_text,
+            (score_rect.centerx - score_text.get_width() / 2, score_rect.y + 10),
+        )
 
-        ult_w = 220
-        ult_h = 12
-        ult_x = WIDTH - ult_w - 20
-        ult_y = HEIGHT - ult_h - 15
-        pygame.draw.rect(self.screen, (40, 40, 45), (ult_x, ult_y, ult_w, ult_h))
+        # Buff panel (left, under core)
+        buff_x = margin
+        buff_y = left_rect.bottom + 10
+        buff_w = 220
+        buff_h = 64
+        if self.player.multishot > 0 or self.player.haste > 0:
+            buff_rect = pygame.Rect(buff_x, buff_y, buff_w, buff_h)
+            draw_panel(buff_rect, accent=False)
+            row_y = buff_rect.y + 10
+            if self.player.multishot > 0:
+                ratio = clamp(self.player.multishot / 12.0, 0, 1)
+                draw_bar(buff_rect.x + 32, row_y, buff_w - 48, 10, ratio, (90, 220, 140), (30, 36, 46))
+                icon = self.ui_icons.get("multishot")
+                if icon:
+                    self.screen.blit(icon, (buff_rect.x + 6, row_y - 6))
+                else:
+                    pygame.draw.circle(self.screen, WHITE, (buff_rect.x + 14, row_y + 4), 5)
+                row_y += 22
+            if self.player.haste > 0:
+                ratio = clamp(self.player.haste / 6.0, 0, 1)
+                draw_bar(buff_rect.x + 32, row_y, buff_w - 48, 10, ratio, (240, 210, 90), (30, 36, 46))
+                icon = self.ui_icons.get("haste")
+                if icon:
+                    self.screen.blit(icon, (buff_rect.x + 6, row_y - 8))
+                else:
+                    pygame.draw.circle(self.screen, GREEN, (buff_rect.x + 14, row_y + 4), 5)
+
+        # XP panel (bottom-left)
+        xp_w = 360
+        xp_h = 34
+        xp_rect = pygame.Rect(margin, HEIGHT - xp_h - 14, xp_w, xp_h)
+        draw_panel(xp_rect)
+        xp_ratio = clamp(self.player.xp / max(1, self.player.next_xp), 0, 1)
+        draw_bar(xp_rect.x + 12, xp_rect.y + 12, xp_w - 24, 10, xp_ratio, CYAN, (30, 36, 46))
+        lvl_text = self.font.render(f"NIV {self.player.level}", True, WHITE)
+        self.screen.blit(lvl_text, (xp_rect.right + 8, xp_rect.y + 6))
+
+        # Ultimate panel (bottom-right)
+        ult_w = 300
+        ult_h = 34
+        ult_rect = pygame.Rect(WIDTH - ult_w - margin, HEIGHT - ult_h - 14, ult_w, ult_h)
+        draw_panel(ult_rect)
         ult_ratio = clamp(self.player.ultimate_charge / max(1, self.player.ultimate_max), 0, 1)
-        ult_color = (255, 220, 80) if ult_ratio >= 1 else (180, 170, 90)
-        pygame.draw.rect(self.screen, ult_color, (ult_x, ult_y, ult_w * ult_ratio, ult_h))
+        ult_color = (255, 220, 80) if ult_ratio >= 1 else (160, 170, 120)
+        draw_bar(ult_rect.x + 12, ult_rect.y + 12, ult_w - 24, 10, ult_ratio, ult_color, (30, 36, 46))
         ult_label = self.font.render("ULT (A)", True, WHITE)
-        self.screen.blit(ult_label, (ult_x, ult_y - 23))
+        self.screen.blit(ult_label, (ult_rect.centerx - ult_label.get_width() / 2, ult_rect.y - 8))
 
     def draw_cheat_buttons(self):
         if not self.cheats_enabled:
@@ -2233,25 +2278,27 @@ class Game:
         for btn in self.cheat_buttons:
             rect = btn["rect"]
             hovered = rect.collidepoint(mouse_pos)
-            color = (70, 60, 40) if hovered else (50, 45, 35)
+            color = (40, 50, 70) if hovered else (28, 34, 46)
             pygame.draw.rect(self.screen, color, rect, border_radius=6)
-            pygame.draw.rect(self.screen, (120, 100, 70), rect, 2, border_radius=6)
-            label = self.font.render(btn["label"], True, WHITE)
+            pygame.draw.rect(self.screen, (90, 160, 220), rect, 2, border_radius=6)
+            label = self.font.render(btn["label"], True, (220, 235, 255))
             self.screen.blit(label, (rect.x + 8, rect.y + 6))
 
     def draw_upgrade_screen(self):
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        overlay.fill((10, 10, 12, 220))
+        overlay.fill((8, 10, 16, 225))
         self.screen.blit(overlay, (0, 0))
         panel_w = int(WIDTH * 0.8)
         panel_h = int(HEIGHT * 0.8)
         panel_x = (WIDTH - panel_w) / 2
         panel_y = (HEIGHT - panel_h) / 2
         panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
-        pygame.draw.rect(self.screen, (25, 25, 32), panel_rect, border_radius=14)
-        pygame.draw.rect(self.screen, (80, 80, 100), panel_rect, 2, border_radius=14)
+        pygame.draw.rect(self.screen, (18, 22, 30), panel_rect, border_radius=14)
+        pygame.draw.rect(self.screen, (70, 110, 160), panel_rect, 2, border_radius=14)
+        inner = panel_rect.inflate(-16, -16)
+        pygame.draw.rect(self.screen, (90, 200, 255), inner, 1, border_radius=12)
 
-        title = self.big_font.render("Choisis un upgrade", True, WHITE)
+        title = self.big_font.render("Choisis un upgrade", True, (200, 230, 255))
         self.screen.blit(
             title, (panel_x + panel_w / 2 - title.get_width() / 2, panel_y - 36)
         )
@@ -2264,15 +2311,15 @@ class Game:
             hovered = rect.collidepoint(mouse_pos)
             is_epic = choice.key in epic_keys
             if is_epic:
-                color = (120, 90, 170) if hovered else (90, 70, 140)
-                border = (180, 140, 230)
+                color = (60, 50, 90) if hovered else (45, 40, 70)
+                border = (150, 120, 230)
             else:
-                color = (70, 70, 85) if hovered else (45, 45, 58)
-                border = (90, 90, 110)
+                color = (35, 40, 55) if hovered else (26, 30, 42)
+                border = (90, 140, 190)
             pygame.draw.rect(self.screen, color, rect, border_radius=10)
             pygame.draw.rect(self.screen, border, rect, 2, border_radius=8)
-            label = self.big_font.render(choice.label, True, YELLOW)
-            desc = self.font.render(choice.desc, True, WHITE)
+            label = self.big_font.render(choice.label, True, (230, 240, 255))
+            desc = self.font.render(choice.desc, True, (190, 210, 230))
             name_h = int(rect.height * 0.12)
             img_h = int(rect.height * 0.8)
             name_y = rect.y + 10
@@ -2295,46 +2342,62 @@ class Game:
 
     def draw_game_over(self):
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        overlay.fill((10, 10, 12, 230))
+        overlay.fill((8, 10, 16, 230))
         self.screen.blit(overlay, (0, 0))
-        title = self.big_font.render("Game Over", True, RED)
-        self.screen.blit(title, (WIDTH / 2 - title.get_width() / 2, 160))
-        score = self.font.render(f"Score: {self.score}  |  Vague: {self.wave}", True, WHITE)
-        self.screen.blit(score, (WIDTH / 2 - score.get_width() / 2, 210))
-        hint = self.font.render("Choisis un bouton pour continuer", True, WHITE)
-        self.screen.blit(hint, (WIDTH / 2 - hint.get_width() / 2, 250))
+        panel_w = 520
+        panel_h = 240
+        panel_rect = pygame.Rect(WIDTH / 2 - panel_w / 2, 120, panel_w, panel_h)
+        pygame.draw.rect(self.screen, (18, 22, 30), panel_rect, border_radius=14)
+        pygame.draw.rect(self.screen, (90, 140, 200), panel_rect, 2, border_radius=14)
+        inner = panel_rect.inflate(-16, -16)
+        pygame.draw.rect(self.screen, (120, 210, 255), inner, 1, border_radius=12)
+
+        title = self.big_font.render("Game Over", True, (230, 90, 90))
+        self.screen.blit(title, (panel_rect.centerx - title.get_width() / 2, panel_rect.y + 26))
+        score = self.font.render(f"Score: {self.score}  |  Vague: {self.wave}", True, (200, 220, 240))
+        self.screen.blit(score, (panel_rect.centerx - score.get_width() / 2, panel_rect.y + 76))
+        hint = self.font.render("Choisis un bouton pour continuer", True, (180, 200, 220))
+        self.screen.blit(hint, (panel_rect.centerx - hint.get_width() / 2, panel_rect.y + 110))
 
         mouse_pos = pygame.mouse.get_pos()
         for btn in self.ui_buttons:
             rect = btn["rect"]
             action = btn["action"]
             hovered = rect.collidepoint(mouse_pos)
-            color = (60, 60, 70) if hovered else (40, 40, 50)
+            color = (45, 55, 75) if hovered else (30, 36, 48)
             pygame.draw.rect(self.screen, color, rect, border_radius=10)
-            pygame.draw.rect(self.screen, (100, 100, 120), rect, 2, border_radius=10)
+            pygame.draw.rect(self.screen, (90, 160, 220), rect, 2, border_radius=10)
             text = "Rejouer" if action == "replay" else "Quitter"
-            label = self.big_font.render(text, True, WHITE)
+            label = self.big_font.render(text, True, (220, 235, 255))
             self.screen.blit(
                 label, (rect.x + rect.width / 2 - label.get_width() / 2, rect.y + 14)
             )
 
     def draw_pause(self):
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        overlay.fill((10, 10, 12, 220))
+        overlay.fill((8, 10, 16, 220))
         self.screen.blit(overlay, (0, 0))
-        title = self.big_font.render("Pause", True, WHITE)
-        self.screen.blit(title, (WIDTH / 2 - title.get_width() / 2, 160))
+        panel_w = 520
+        panel_h = 220
+        panel_rect = pygame.Rect(WIDTH / 2 - panel_w / 2, 140, panel_w, panel_h)
+        pygame.draw.rect(self.screen, (18, 22, 30), panel_rect, border_radius=14)
+        pygame.draw.rect(self.screen, (90, 140, 200), panel_rect, 2, border_radius=14)
+        inner = panel_rect.inflate(-16, -16)
+        pygame.draw.rect(self.screen, (120, 210, 255), inner, 1, border_radius=12)
+
+        title = self.big_font.render("Pause", True, (210, 230, 255))
+        self.screen.blit(title, (panel_rect.centerx - title.get_width() / 2, panel_rect.y + 26))
 
         mouse_pos = pygame.mouse.get_pos()
         for btn in self.ui_buttons:
             rect = btn["rect"]
             action = btn["action"]
             hovered = rect.collidepoint(mouse_pos)
-            color = (60, 60, 70) if hovered else (40, 40, 50)
+            color = (45, 55, 75) if hovered else (30, 36, 48)
             pygame.draw.rect(self.screen, color, rect, border_radius=10)
-            pygame.draw.rect(self.screen, (100, 100, 120), rect, 2, border_radius=10)
+            pygame.draw.rect(self.screen, (90, 160, 220), rect, 2, border_radius=10)
             text = "Reprendre" if action == "resume" else ("Rejouer" if action == "replay" else "Quitter")
-            label = self.big_font.render(text, True, WHITE)
+            label = self.big_font.render(text, True, (220, 235, 255))
             self.screen.blit(
                 label, (rect.x + rect.width / 2 - label.get_width() / 2, rect.y + 14)
             )
