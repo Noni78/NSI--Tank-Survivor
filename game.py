@@ -555,12 +555,17 @@ class Boss:
         self.projectile_timer = 0.0
         self.zone_burst = 0
         self.zone_timer = 0.0
+        self.burn_timer = 0.0
+        self.burn_dps = 0.0
 
     def phase(self):
         ratio = max(0.0, min(1.0, self.hp / self.max_hp))
         return int((1.0 - ratio) * 4)
 
     def update(self, dt, player_pos, projectiles, zones, wave, damage_value):
+        if self.burn_timer > 0:
+            self.burn_timer -= dt
+            self.hp -= self.burn_dps * dt
         if self.spawn_delay > 0:
             self.spawn_delay = max(0.0, self.spawn_delay - dt)
             return
@@ -657,6 +662,14 @@ class Boss:
         pygame.draw.rect(screen, (70, 90, 120), turret, border_radius=8)
         pygame.draw.rect(screen, (120, 150, 190), turret, 2, border_radius=8)
         pygame.draw.circle(screen, (140, 200, 230), (int(self.x + 26), int(self.y - 12)), 8)
+        if self.burn_timer > 0:
+            pygame.draw.circle(
+                screen,
+                (255, 120, 60),
+                (int(self.x), int(self.y)),
+                int(self.radius + 12),
+                3,
+            )
         if self.state == "laser":
             phase = self.phase()
             for i in range(6):
@@ -1186,11 +1199,11 @@ class ElectroElf:
         self.target_x = random.uniform(margin, WIDTH - margin)
         self.target_y = random.uniform(margin, HEIGHT - margin)
 
-    def update(self, dt, enemies):
-        if self.target is None or self.target not in enemies or self.target.hp <= 0:
-            if enemies:
+    def update(self, dt, targets):
+        if self.target is None or self.target not in targets or self.target.hp <= 0:
+            if targets:
                 self.target = min(
-                    enemies,
+                    targets,
                     key=lambda e: (e.x - self.x) ** 2 + (e.y - self.y) ** 2,
                 )
             else:
@@ -1735,6 +1748,10 @@ class Game:
                 if distance((orb.x, orb.y), (enemy.x, enemy.y)) < orb.size + enemy.radius:
                     enemy.burn_timer = max(enemy.burn_timer, 3.0)
                     enemy.burn_dps = max(enemy.burn_dps, 10.0)
+            if self.boss is not None:
+                if distance((orb.x, orb.y), (self.boss.x, self.boss.y)) < orb.size + self.boss.radius:
+                    self.boss.burn_timer = max(self.boss.burn_timer, 3.0)
+                    self.boss.burn_dps = max(self.boss.burn_dps, 10.0)
 
         if self.player.fire_ring:
             ring_radius = 70
@@ -1744,6 +1761,11 @@ class Game:
                 if ring_radius - ring_thickness <= dist <= ring_radius + ring_thickness:
                     enemy.burn_timer = max(enemy.burn_timer, 4.0)
                     enemy.burn_dps = max(enemy.burn_dps, 18.0)
+            if self.boss is not None:
+                dist = distance((self.boss.x, self.boss.y), (self.player.x, self.player.y))
+                if ring_radius - ring_thickness <= dist <= ring_radius + ring_thickness:
+                    self.boss.burn_timer = max(self.boss.burn_timer, 4.0)
+                    self.boss.burn_dps = max(self.boss.burn_dps, 18.0)
 
         for pickup in list(self.pickups):
             if distance((pickup.x, pickup.y), (self.player.x, self.player.y)) < pickup.radius + self.player.radius:
@@ -1896,14 +1918,17 @@ class Game:
         if self.player.electroelf_level > 0:
             if self.player.electroelf is None:
                 self.player.electroelf = ElectroElf()
-            self.player.electroelf.update(dt, self.enemies)
+            targets = list(self.enemies)
+            if self.boss is not None:
+                targets.append(self.boss)
+            self.player.electroelf.update(dt, targets)
             self.player.electroelf_timer += dt
             if self.player.electroelf_timer >= self.player.electroelf_cooldown:
                 self.player.electroelf_timer -= self.player.electroelf_cooldown
-                if self.enemies:
+                if targets:
                     elf = self.player.electroelf
                     target = elf.target or min(
-                        self.enemies,
+                        targets,
                         key=lambda e: (e.x - elf.x) ** 2 + (e.y - elf.y) ** 2,
                     )
                     strike_radius = self.player.electroelf_range
@@ -1950,6 +1975,8 @@ class Game:
             )
             if self.boss.laser_hits_player((self.player.x, self.player.y)) and self.boss.can_laser_damage():
                 self.player.take_damage(self.boss_attack_damage())
+            if self.boss is not None and self.boss.hp <= 0:
+                self.on_boss_killed()
 
         for pickup in list(self.pickups):
             pickup.update(dt)
@@ -2053,6 +2080,11 @@ class Game:
                         if enemy.hp <= 0 and enemy in self.enemies:
                             self.enemies.remove(enemy)
                             self.on_enemy_killed(enemy)
+                if self.boss is not None:
+                    if distance((self.boss.x, self.boss.y), (strike.ex, strike.ey)) <= strike.radius:
+                        self.boss.hp -= strike.damage
+                        if self.boss.hp <= 0:
+                            self.on_boss_killed()
             if strike.time_left <= 0:
                 self.lightning_effects.remove(strike)
 
