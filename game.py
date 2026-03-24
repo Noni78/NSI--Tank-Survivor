@@ -4,7 +4,7 @@ import random
 import sys
 from dataclasses import dataclass
 from typing import Optional
-
+  
 import pygame
 
 
@@ -1980,13 +1980,22 @@ class Game:
                 if distance((rocket.x, rocket.y), (enemy.x, enemy.y)) < rocket.radius + enemy.radius:
                     hit = enemy
                     break
-            if hit:
+            hit_boss = False
+            if self.boss is not None:
+                if distance((rocket.x, rocket.y), (self.boss.x, self.boss.y)) < rocket.radius + self.boss.radius:
+                    hit_boss = True
+            if hit or hit_boss:
                 for enemy in list(self.enemies):
                     if distance((rocket.x, rocket.y), (enemy.x, enemy.y)) <= rocket.explosion_radius:
                         enemy.hp -= rocket.damage
                         if enemy.hp <= 0 and enemy in self.enemies:
                             self.enemies.remove(enemy)
                             self.on_enemy_killed(enemy)
+                if self.boss is not None:
+                    if distance((rocket.x, rocket.y), (self.boss.x, self.boss.y)) <= rocket.explosion_radius:
+                        self.boss.hp -= rocket.damage
+                        if self.boss.hp <= 0:
+                            self.on_boss_killed()
                 self.explosions.append(
                     Explosion(rocket.x, rocket.y, rocket.explosion_radius, duration=0.25)
                 )
