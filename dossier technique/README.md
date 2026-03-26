@@ -8,7 +8,7 @@ Ce fichier explique comment executer le jeu Tank survivor.
 
 ## 2. Prerequis
 - Avoir `python` et `pip` installes.
-- Se placer dans le dossier racine du projet (celui qui contient `game.py`).
+- Se placer dans le dossier racine du projet (celui qui contient `main.py`).
 
 ## 3. Installation des dependances
 Commande recommandee :
@@ -21,7 +21,7 @@ pip install -r requirements.txt
 Depuis le dossier racine du projet :
 
 ```bash
-python game.py
+python main.py
 ```
 
 ## 5. Option conseillee : environnement virtuel
@@ -31,5 +31,5 @@ Sur Windows :
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-python game.py
+python main.py
 ```

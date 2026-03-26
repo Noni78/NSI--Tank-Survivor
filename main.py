@@ -1423,7 +1423,7 @@ TEMP_PICKUP_POOL = ["shield", "haste", "multishot", "heal"]
 class Game:
     def __init__(self):
         pygame.init()
-        pygame.display.set_caption("Shooter")
+        pygame.display.set_caption("Tank Survivor")
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
         self.clock = pygame.time.Clock()
         self.font_path = os.path.join(os.path.dirname(__file__), "genshin.ttf")
@@ -2194,7 +2194,6 @@ class Game:
                     self.player.laser_orb_timer = self.player.laser_orb_cooldown
 
             if self.player.laser_orb_beam_timer > 0 and self.player.laser_orb_beam_pos:
-                # Retarget if the original target dies: pick the closest to the last beam position.
                 beam_target = self.player.laser_orb_beam_target
                 candidates = list(self.enemies)
                 if self.boss is not None:
@@ -2439,7 +2438,7 @@ class Game:
         margin = 16
         top_y = 12
 
-        # Left core panel (HP + Fire + Shield/Rocket)
+        # Left core panel #
         left_w = 380
         left_h = 68
         left_rect = pygame.Rect(margin, top_y, left_w, left_h)
@@ -2473,7 +2472,7 @@ class Game:
         self.screen.blit(shield_label, (mini_x + 4, hp_y - 6))
         self.screen.blit(rocket_label, (mini_x + 4, fire_y - 6))
 
-        # Center wave/boss panel
+        # Center wave/boss panel #
         wave_w = 560
         wave_h = 40
         wave_x = WIDTH / 2 - wave_w / 2
@@ -2502,7 +2501,7 @@ class Game:
             (wave_rect.centerx - wave_text.get_width() / 2, wave_rect.y + 2),
         )
 
-        # Score panel (top-right)
+        # Score panel #
         score_w = 210
         score_h = 40
         score_rect = pygame.Rect(WIDTH - score_w - margin, top_y, score_w, score_h)
@@ -2513,7 +2512,7 @@ class Game:
             (score_rect.centerx - score_text.get_width() / 2, score_rect.y + 10),
         )
 
-        # Buff panel (left, under core) - order by remaining time (desc)
+        # Buff panel #
         buff_x = margin
         buff_y = left_rect.bottom + 10
         buff_w = 220

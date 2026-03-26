@@ -1,40 +1,42 @@
-# Presentation du projet - Die and Retry
+# Présentation du projet - Die and Retry
 
-## 1. Presentation globale du projet
-Die and Retry est un jeu video 2D realise en specialite NSI avec Python et Pygame.
+## 1. Présentation globale du projet
+Die and Retry est un jeu vidéo 2D réalisé en spécialité NSI avec Python et Pygame.
 
-- Naissance de l'idee : l'equipe est passionnee de jeux video et voulait creer un projet concret, jouable et motivant.
-- Problematique initiale : concevoir un jeu "die and retry" simple a prendre en main, mais assez riche pour donner envie de rejouer.
-- Objectifs : proposer des parties dynamiques, des vagues d'ennemis progressives, un boss toutes les 5 vagues, et un systeme d'ameliorations strategique.
+- Naissance de l'idée : l'équipe est passionnée de jeux vidéo et voulait créer un projet concret, jouable et motivant.
+- Problématique initiale : concevoir un jeu "die and retry" simple à prendre en main, mais assez riche pour donner envie de rejouer.
+- Objectifs : proposer des parties dynamiques, des vagues d'ennemis progressives, un boss toutes les 5 vagues, et un système d'améliorations stratégique.
 
 ## 2. Organisation du travail
-Le projet a ete realise par une equipe de 4 eleves.
+Le projet a été réalisé par une équipe de 4 élèves.
 
 - Nolan : comportement et apparition des ennemis, gestion des power-ups.
-- Vladimir : logique du personnage et idees de gameplay.
+- Vladimir : logique du personnage et idées de gameplay.
 - Sylvain : interface graphique (programmation et design), design et recherche des visuels.
-- Dimitri : equilibrage et competences.
+- Dimitri : équilibrage et compétences.
 
-Repartition des taches : chaque membre avait un domaine principal, avec des ajustements collectifs lors des phases de test.
+Répartition des tâches : chaque membre avait un domaine principal, avec des ajustements collectifs lors des phases de test.
 
-Temps passe : environ 75 heures au total (ideation, developpement, integration, playtests et correction de bugs).
+Temps passé : environ 75 heures au total 
+- 60% "brainstorming", développement et intégration
+- 40% playtests et correction de bugs.
 
-## 3. Etapes du projet
-- Etape 1 : recherche d'idee et definition du type de jeu.
-- Etape 2 : creation d'un prototype jouable (deplacements, tirs, ennemis).
-- Etape 3 : ajout des mecaniques principales (vagues, boss, progression, power-ups).
-- Etape 4 : travail sur l'interface et l'identite visuelle.
-- Etape 5 : phases de test, equilibrage et corrections.
-- Etape 6 : finalisation technique et preparation du rendu.
+## 3. Étapes du projet
+- Étape 1 : recherche d'idée et définition du type de jeu.
+- Étape 2 : création d'un prototype jouable (déplacements, tirs, ennemis).
+- Étape 3 : ajout des mécaniques principales (vagues, boss, progression, power-ups).
+- Étape 4 : travail sur l'interface et l'identité visuelle.
+- Étape 5 : phases de test, équilibrage et corrections.
+- Étape 6 : finalisation technique et préparation du rendu.
 
 ## 4. Validation du fonctionnement
-- Etat d'avancement au depot : jeu jouable avec boucle complete (combat, progression, vagues, boss, ameliorations).
-- Verification de l'absence de bugs : playtests repetes et utilisation d'une interface "admin" de test pour reproduire rapidement des situations.
-- Difficultes rencontrees : equilibrage de la difficulte, coherence des synergies d'ameliorations, gestion de certains cas limites en jeu.
-- Solutions apportees : ajustements progressifs des statistiques, tests comparatifs entre versions, correction iterative dans la boucle de jeu.
+- État d'avancement au dépôt : jeu jouable avec boucle complète (combat, progression, vagues, boss, améliorations).
+- Vérification de l'absence de bugs : playtests répétés et utilisation d'une interface "admin" de test pour reproduire rapidement des situations.
+- Difficultés rencontrées : équilibrage de la difficulté, cohérence des synergies d'améliorations, gestion de certains cas limites en jeu.
+- Solutions apportées : ajustements progressifs des statistiques, tests comparatifs entre versions, correction itérative dans la boucle de jeu.
 
 ## 5. Ouverture
-- Idees d'amelioration : nouveaux ennemis, nouveaux boss, nouveaux power-ups, meilleure personnalisation du personnage.
-- Analyse critique : le coeur du gameplay fonctionne bien, mais l'equilibrage peut encore etre affine pour mieux gerer tous les profils de joueurs.
-- Competences developpees : programmation Python, architecture de projet, travail en equipe, test et debogage.
-- Demarche d'inclusion : controles simples (ZQSD ou fleches), regles claires, progression lisible, jeu accessible a des joueurs debutants comme confirmes.
+- Idées d'amélioration : nouveaux ennemis, nouveaux boss, nouveaux power-ups, meilleure personnalisation du personnage.
+- Analyse critique : le cœur du gameplay fonctionne bien, mais l'équilibrage peut encore être affiné pour mieux gérer tous les profils de joueurs.
+- Compétences développées : programmation Python, architecture de projet, travail en équipe, test et débogage.
+- Démarche d'inclusion : contrôles simples (ZQSD ou flèches), règles claires, progression lisible, jeu accessible à des joueurs débutants comme confirmés.

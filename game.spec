@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['game.py'],
+    ['main.py'],
     pathex=[],
     binaries=[],
     datas=[('character.png', '.'), ('drone.png', '.'), ('dronebleu.png', '.'), ('fireball.png', '.'), ('genshin.ttf', '.'), ('haste.png', '.'), ('heal.png', '.'), ('multishot.png', '.'), ('pleindesoldier.png', '.'), ('rocket.png', '.'), ('shield.png', '.'), ('shieldicon.png', '.'), ('shooter.png', '.'), ('tank.png', '.')],
