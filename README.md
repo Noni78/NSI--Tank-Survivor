@@ -33,3 +33,5 @@ python -m venv .venv
 pip install -r requirements.txt
 python main.py
 ```
+## 6. Pour faire des tests:
+En appuyant sur la touche O, cela ouvre une interface "admin" pour se rajouter divers upgrade 

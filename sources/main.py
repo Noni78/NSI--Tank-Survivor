@@ -353,19 +353,19 @@ class Enemy:
         if kind == "fast":
             self.speed *= 3.0
             self.target_height = int(HEIGHT * 0.05)
-            self.max_hp = 16 + wave * 5
+            self.max_hp = 20 + wave * 6
         elif kind == "tank":
             self.speed *= 0.65
             self.target_height = int(HEIGHT * 0.12)
-            self.max_hp = 80 + wave * 16
+            self.max_hp = 75 + wave * 12
             self.beam_timer = 2.0
         elif kind == "shooter":
             self.speed *= 0.9
             self.target_height = int(HEIGHT * 0.065)
-            self.max_hp = 24 + wave * 7
+            self.max_hp = 30 + wave * 8
             self.shoot_cooldown = random.uniform(0.2, 0.8)
         else:
-            self.max_hp = 20 + wave * 5
+            self.max_hp = 25 + wave * 6
 
         self.sprite = self.load_sprite()
         if self.sprite:
@@ -541,8 +541,7 @@ class Boss:
     def __init__(self, wave):
         self.x = WIDTH / 2
         self.y = HEIGHT * 0.18
-        base_hp = 80 + wave * 8
-        self.max_hp = base_hp * 17.5 * 4
+        self.max_hp = 1200 + wave * 450
         self.hp = self.max_hp
         self.radius = 42
         self.speed = 70 * 0.65
@@ -736,6 +735,8 @@ class Player:
         self.ultimate_charge = 0
         self.ultimate_max = 20
         self.ultimate_beam_time = 0.0
+        self.ultimate_cooldown = 0.0
+        self.ultimate_cooldown_max = 10.0
         self.shockwave_cooldown = 7.0
         self.shockwave_timer = self.shockwave_cooldown
         self.shockwave_radius = 240
@@ -813,6 +814,7 @@ class Player:
             self.laser_orb_beam_timer = max(0.0, self.laser_orb_beam_timer - dt)
         if self.ultimate_beam_time > 0:
             self.ultimate_beam_time = max(0.0, self.ultimate_beam_time - dt)
+        self.ultimate_cooldown = max(0.0, self.ultimate_cooldown - dt)
 
     def set_aim(self, target_pos):
         dx = target_pos[0] - self.x
@@ -1529,8 +1531,8 @@ class Game:
             self.player.xp -= self.player.next_xp
             self.player.level += 1
             self.player.damage += 4
-            self.player.max_hp += 15
-            self.player.hp = min(self.player.max_hp, self.player.hp + 15)
+            self.player.max_hp += 5
+            self.player.hp = min(self.player.max_hp, self.player.hp + 5)
             self.player.next_xp = int(6 + (self.player.level ** 1.6) * 4)
             self.pending_upgrades += 1
         if self.pending_upgrades > 0 and self.state == "playing":
@@ -1625,7 +1627,7 @@ class Game:
         self.enemies.clear()
         self.boss = None
         self.boss_zones.clear()
-        total = 6 + int(wave * 1.1)
+        total = 8 + int(wave * 1.3)
         self.wave_total = total
         self.wave_killed = 0
         for _ in range(total):
@@ -1654,8 +1656,8 @@ class Game:
         elif key == "damage":
             self.player.damage += 4
         elif key == "max_hp":
-            self.player.max_hp += 15
-            self.player.hp += 15
+            self.player.max_hp += 50
+            self.player.hp += 50
         elif key == "fire_rate":
             self.player.fire_rate = max(0.08, self.player.fire_rate - 0.02)
         elif key == "bullets":
@@ -1853,12 +1855,11 @@ class Game:
         self.state = "boss_death"
 
     def boss_attack_damage(self):
-        # 1/3 of max HP if player had max_hp upgrade at level = current wave.
-        hypothetical_hp = 100 + 15 * self.wave
-        return (hypothetical_hp / 3) * 0.25
+        # Scale with wave, proportional to boss threat
+        return 18 + self.wave * 1.8
 
     def boss_contact_damage(self):
-        return self.boss_attack_damage() * 0.4
+        return self.boss_attack_damage() * 0.35
 
     def get_damage_font(self, size):
         size = int(clamp(size, 16, 72))
@@ -1944,8 +1945,11 @@ class Game:
             return False
         if self.player.ultimate_beam_time > 0:
             return False
+        if self.player.ultimate_cooldown > 0:
+            return False
         self.player.ultimate_charge = 0
         self.player.ultimate_beam_time = 10.0
+        self.player.ultimate_cooldown = self.player.ultimate_cooldown_max
         radius = 220
         self.ultimate_pulses.append(UltimatePulse(self.player.x, self.player.y, radius))
         for enemy in list(self.enemies):
@@ -2048,7 +2052,8 @@ class Game:
 
         for enemy in self.enemies:
             if distance((enemy.x, enemy.y), (self.player.x, self.player.y)) < enemy.radius + self.player.radius:
-                self.damage_player(14 + self.wave * 0.2)
+                contact_damage = max(5, int(self.player.max_hp * 0.06))
+                self.damage_player(contact_damage)
 
         if self.boss is not None:
             if distance((self.boss.x, self.boss.y), (self.player.x, self.player.y)) < self.boss.radius + self.player.radius:
@@ -2598,6 +2603,10 @@ class Game:
         draw_bar(ult_rect.x + 12, ult_rect.y + 12, ult_w - 24, 10, ult_ratio, ult_color, (30, 36, 46))
         ult_label = self.font.render("ULT (A)", True, WHITE)
         self.screen.blit(ult_label, (ult_rect.centerx - ult_label.get_width() / 2, ult_rect.y - 8))
+        # Ultimate cooldown display
+        if self.player.ultimate_cooldown > 0:
+            cooldown_text = self.font.render(f"{self.player.ultimate_cooldown:.1f}", True, (255, 100, 100))
+            self.screen.blit(cooldown_text, (ult_rect.x + 12, ult_rect.y + 12))
 
         # Shockwave panel (above ULT)
         shock_w = 240
