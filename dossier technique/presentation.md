@@ -31,12 +31,12 @@ Temps passé : environ 75 heures au total
 
 ## 4. Validation du fonctionnement
 - État d'avancement au dépôt : jeu jouable avec boucle complète (combat, progression, vagues, boss, améliorations).
-- Vérification de l'absence de bugs : playtests répétés et utilisation d'une interface "admin" de test pour reproduire rapidement des situations.
+- Vérification de l'absence de bugs : playtests répétés et utilisation d'une interface de test pour reproduire rapidement des situations "extrèmes" où des bugs pourrait se trouver.
 - Difficultés rencontrées : équilibrage de la difficulté, cohérence des synergies d'améliorations, gestion de certains cas limites en jeu.
 - Solutions apportées : ajustements progressifs des statistiques, tests comparatifs entre versions, correction itérative dans la boucle de jeu.
 
 ## 5. Ouverture
-- Idées d'amélioration : nouveaux ennemis, nouveaux boss, nouveaux power-ups, meilleure personnalisation du personnage.
+- Idées d'amélioration : nouveaux ennemis, nouveaux boss, nouveaux power-ups, meilleure personnalisation du personnage (skin et/ou plusieurs type de personnage), synergie plus poussée entre power-ups.
 - Analyse critique : le cœur du gameplay fonctionne bien, mais l'équilibrage peut encore être affiné pour mieux gérer tous les profils de joueurs.
 - Compétences développées : programmation Python, architecture de projet, travail en équipe, test et débogage.
 - Démarche d'inclusion : contrôles simples (ZQSD ou flèches), règles claires, progression lisible, jeu accessible à des joueurs débutants comme confirmés.
