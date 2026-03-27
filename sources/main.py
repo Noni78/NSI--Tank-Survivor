@@ -63,7 +63,6 @@ def random_spawn_point():
 ###################
 # --- Classes --- #
 ###################
-
 class Projectile:
     def __init__(self, x, y, vx, vy, damage, color=YELLOW, radius=4, owner="player"):
         self.x = x
@@ -84,6 +83,7 @@ class Projectile:
 
     def draw(self, screen):
         pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
+
 
 class Rocket:
     _sprite_base = None
@@ -320,8 +320,6 @@ class ExpGem:
             pygame.draw.circle(screen, CYAN, (int(self.x), int(self.y)), self.radius)
 
 # --- Ennemi --- #
-
-
 class Enemy:
     def __init__(self, x, y, kind, wave):
         self.x = x
@@ -1034,7 +1032,6 @@ class FireOrbiter:
         else:
             pygame.draw.circle(screen, (255, 120, 60), (int(self.x), int(self.y)), self.size)
             pygame.draw.circle(screen, (255, 200, 120), (int(self.x), int(self.y)), self.size - 4)
-
 
 class LaserOrb:
     _sprite_base = None
