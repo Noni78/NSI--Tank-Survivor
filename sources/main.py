@@ -30,14 +30,11 @@ CYAN = (120, 220, 255)
 def clamp(value, minimum, maximum):
     return max(minimum, min(value, maximum))
 
-
 def vec_from_angle(angle):
     return math.cos(angle), math.sin(angle)
 
-
 def distance(a, b):
     return math.hypot(a[0] - b[0], a[1] - b[1])
-
 
 def point_segment_distance(px, py, ax, ay, bx, by):
     abx = bx - ax
@@ -53,7 +50,6 @@ def point_segment_distance(px, py, ax, ay, bx, by):
     cy = ay + aby * t
     return math.hypot(px - cx, py - cy)
 
-
 def random_spawn_point():
     side = random.choice(["top", "bottom", "left", "right"])
     if side == "top":
@@ -68,7 +64,6 @@ def random_spawn_point():
 # --- Classes --- #
 ###################
 
-# --- Projectiles --- #
 class Projectile:
     def __init__(self, x, y, vx, vy, damage, color=YELLOW, radius=4, owner="player"):
         self.x = x
@@ -90,8 +85,6 @@ class Projectile:
     def draw(self, screen):
         pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
 
-
-# --- Rockets --- #
 class Rocket:
     _sprite_base = None
     _sprite_missing = False
@@ -220,8 +213,6 @@ class UpgradePickup:
                 return None
         return None
 
-    
-
     def draw(self, screen):
         if self.type == "haste":
             halo = pygame.Surface((self.radius * 5, self.radius * 5), pygame.SRCALPHA)
@@ -242,7 +233,6 @@ class UpgradePickup:
     def update(self, dt):
         self.time_left -= dt
 
-# --- Gemmes d'EXP --- #
 class ExpGem:
     _sprite_base = None
     _sprite_missing = False
@@ -330,6 +320,8 @@ class ExpGem:
             pygame.draw.circle(screen, CYAN, (int(self.x), int(self.y)), self.radius)
 
 # --- Ennemi --- #
+
+
 class Enemy:
     def __init__(self, x, y, kind, wave):
         self.x = x
@@ -683,7 +675,7 @@ class Boss:
                 width = 8 + phase * 2.5
                 pygame.draw.line(screen, (255, 160, 90), (self.x, self.y), (ex, ey), int(width))
 
-# --- Joueur --- #
+
 class Player:
     def __init__(self):
         self.x = WIDTH / 2
@@ -749,7 +741,6 @@ class Player:
         self.xp = 0
         self.next_xp = 5
         
-
     def load_sprite(self):
         path = os.path.join(DATA_DIR, "character.png")
         if os.path.exists(path):
@@ -813,7 +804,10 @@ class Player:
         if self.laser_orb_beam_timer > 0:
             self.laser_orb_beam_timer = max(0.0, self.laser_orb_beam_timer - dt)
         if self.ultimate_beam_time > 0:
+            ultimate_just_ended = self.ultimate_beam_time - dt <= 0
             self.ultimate_beam_time = max(0.0, self.ultimate_beam_time - dt)
+            if ultimate_just_ended and self.ultimate_cooldown <= 0:
+                self.ultimate_cooldown = self.ultimate_cooldown_max
         self.ultimate_cooldown = max(0.0, self.ultimate_cooldown - dt)
 
     def set_aim(self, target_pos):
@@ -1084,7 +1078,7 @@ class LaserOrb:
         else:
             pygame.draw.circle(screen, BLUE, (int(self.x), int(self.y)), self.radius)
 
-
+# --- Foudre de l'elfe electrique --- #
 class LightningStrike:
     def __init__(self, start_pos, end_pos, radius, damage, target=None, charge_time=0.35, duration=0.25):
         self.sx, self.sy = start_pos
@@ -1143,20 +1137,16 @@ class LightningStrike:
             alpha = int(255 * (self.time_left / self.duration))
             self.points = self._build_points()
             bolt = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-            # Outer glow
             pygame.draw.lines(bolt, (80, 140, 255, int(alpha * 0.6)), False, self.points, 10)
             pygame.draw.lines(bolt, (120, 180, 255, int(alpha * 0.8)), False, self.points, 7)
-            # Core bolt
             pygame.draw.lines(bolt, (230, 245, 255, alpha), False, self.points, 4)
             pygame.draw.lines(bolt, (255, 255, 255, alpha), False, self.points, 2)
-            # Impact flash
             pygame.draw.circle(
                 bolt, (220, 240, 255, alpha), (int(self.ex), int(self.ey)), int(self.radius * 1.4)
             )
             pygame.draw.circle(
                 bolt, (255, 255, 255, alpha), (int(self.ex), int(self.ey)), int(self.radius * 0.6)
             )
-            # Extra crisp bolt overlay to keep the shape very visible
             pygame.draw.lines(screen, (255, 255, 255), False, self.points, 3)
             pygame.draw.lines(screen, (180, 220, 255), False, self.points, 5)
             screen.blit(bolt, (0, 0))
@@ -1806,7 +1796,6 @@ class Game:
             self.gems.append(ExpGem(x + ox, y + oy, amount=amount))
 
     def attract_all_gems(self, duration):
-        # Force all existing gems to rush toward the player for a short animation feel.
         for gem in self.gems:
             gem.pickup_range = max(gem.pickup_range, 99999.0)
             gem.attract = max(gem.attract, 900.0)
@@ -1855,7 +1844,6 @@ class Game:
         self.state = "boss_death"
 
     def boss_attack_damage(self):
-        # Scale with wave, proportional to boss threat
         return 18 + self.wave * 1.8
 
     def boss_contact_damage(self):
@@ -1949,7 +1937,7 @@ class Game:
             return False
         self.player.ultimate_charge = 0
         self.player.ultimate_beam_time = 10.0
-        self.player.ultimate_cooldown = self.player.ultimate_cooldown_max
+        self.player.ultimate_cooldown = 0.0
         radius = 220
         self.ultimate_pulses.append(UltimatePulse(self.player.x, self.player.y, radius))
         for enemy in list(self.enemies):
@@ -2447,7 +2435,7 @@ class Game:
         margin = 16
         top_y = 12
 
-        # Left core panel #
+        # Left panel #
         left_w = 380
         left_h = 68
         left_rect = pygame.Rect(margin, top_y, left_w, left_h)
@@ -2481,7 +2469,7 @@ class Game:
         self.screen.blit(shield_label, (mini_x + 4, hp_y - 6))
         self.screen.blit(rocket_label, (mini_x + 4, fire_y - 6))
 
-        # Center wave/boss panel #
+        # wave panel #
         wave_w = 560
         wave_h = 40
         wave_x = WIDTH / 2 - wave_w / 2
