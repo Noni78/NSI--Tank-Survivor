@@ -9,7 +9,7 @@ import pygame
 BASE_DIR = os.path.dirname(__file__)
 DATA_DIR = os.path.join(BASE_DIR, "datas")
 
-WIDTH, HEIGHT = 1500, 800
+WIDTH, HEIGHT = 1920, 1080
 FPS = 60
 
 #################
