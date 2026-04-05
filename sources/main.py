@@ -321,6 +321,37 @@ class ExpGem:
 
 # --- Ennemi --- #
 class Enemy:
+    STYLE = {
+        "basic": {
+            "shape": "circle",
+            "radius": 14,
+            "primary": (55, 160, 255),
+            "secondary": (110, 220, 255),
+            "core": (220, 245, 255),
+        },
+        "fast": {
+            "shape": "arrow",
+            "radius": 12,
+            "primary": (255, 210, 65),
+            "secondary": (255, 242, 135),
+            "core": (255, 250, 215),
+        },
+        "tank": {
+            "shape": "square",
+            "radius": 22,
+            "primary": (90, 245, 130),
+            "secondary": (155, 255, 190),
+            "core": (220, 255, 235),
+        },
+        "shooter": {
+            "shape": "star7",
+            "radius": 17,
+            "primary": (255, 85, 85),
+            "secondary": (255, 145, 130),
+            "core": (255, 225, 215),
+        },
+    }
+
     def __init__(self, x, y, kind, wave):
         self.x = x
         self.y = y
@@ -330,68 +361,174 @@ class Enemy:
         self.radius = 14
         self.max_hp = 20
         self.shoot_cooldown = 0.0
-        self.target_height = int(HEIGHT * 0.06)
-        self.sprite = None
         self.rotation = 0.0
+        self.facing_angle = 0.0
         self.beam_timer = 0.0
         self.beam_charge = 0.0
         self.beam_active = 0.0
         self.beam_angle = 0.0
         self.beam_length = WIDTH
         self.beam_width = 14
+        self.neon_phase = random.uniform(0.0, math.tau)
+        self.neon_flicker = random.uniform(2.3, 3.6)
 
         if kind == "fast":
             self.speed *= 3.0
-            self.target_height = int(HEIGHT * 0.05)
             self.max_hp = 20 + wave * 6
         elif kind == "tank":
             self.speed *= 0.65
-            self.target_height = int(HEIGHT * 0.12)
             self.max_hp = 75 + wave * 12
             self.beam_timer = 2.0
         elif kind == "shooter":
             self.speed *= 0.9
-            self.target_height = int(HEIGHT * 0.065)
             self.max_hp = 30 + wave * 8
             self.shoot_cooldown = random.uniform(0.2, 0.8)
         else:
             self.max_hp = 25 + wave * 6
 
-        self.sprite = self.load_sprite()
-        if self.sprite:
-            self.radius = self.sprite.get_width() / 2
+        style = Enemy.STYLE.get(kind, Enemy.STYLE["basic"])
+        self.shape = style["shape"]
+        self.neon_primary = style["primary"]
+        self.neon_secondary = style["secondary"]
+        self.neon_core = style["core"]
+        self.radius = style["radius"]
 
         self.hp = self.max_hp
         self.burn_timer = 0.0
         self.burn_dps = 0.0
         self.fire_orb_hit_cd = 0.0
 
-    def load_sprite(self):
-        if self.kind == "basic":
-            filename = "dronebleu.png"
-        elif self.kind == "fast":
-            filename = "drone.png"
-        elif self.kind == "tank":
-            filename = "tank.png"
-        elif self.kind == "shooter":
-            filename = "shooter.png"
-        else:
-            return None
-        path = os.path.join(DATA_DIR, filename)
-        if os.path.exists(path):
-            try:
-                img = pygame.image.load(path).convert_alpha()
-                scale = self.target_height / img.get_height()
-                size = (int(img.get_width() * scale), int(img.get_height() * scale))
-                return pygame.transform.smoothscale(img, size)
-            except pygame.error:
-                return None
-        return None
-    
-    def angle_toward(self, player_pos):
-        dx = self.x - player_pos[0]
-        dy = player_pos[1] - self.y
-        return math.atan2(dy, dx)
+    @staticmethod
+    def _mix_color(color_a, color_b, t):
+        t = clamp(t, 0.0, 1.0)
+        return (
+            int(color_a[0] + (color_b[0] - color_a[0]) * t),
+            int(color_a[1] + (color_b[1] - color_a[1]) * t),
+            int(color_a[2] + (color_b[2] - color_a[2]) * t),
+        )
+
+    @staticmethod
+    def _regular_polygon(center, radius, sides, angle_offset=0.0):
+        cx, cy = center
+        points = []
+        for i in range(sides):
+            angle = angle_offset + i * (math.tau / sides)
+            points.append((int(cx + math.cos(angle) * radius), int(cy + math.sin(angle) * radius)))
+        return points
+
+    @staticmethod
+    def _star_polygon(center, outer_radius, inner_radius, branches, angle_offset=0.0):
+        cx, cy = center
+        points = []
+        total = branches * 2
+        for i in range(total):
+            radius = outer_radius if i % 2 == 0 else inner_radius
+            angle = angle_offset + i * (math.tau / total)
+            points.append((int(cx + math.cos(angle) * radius), int(cy + math.sin(angle) * radius)))
+        return points
+
+    @staticmethod
+    def _arrow_polygon(center, radius, angle):
+        cx, cy = center
+        points = []
+        template = [
+            (1.0, 0.0),
+            (0.2, 0.56),
+            (0.2, 0.22),
+            (-0.9, 0.22),
+            (-0.9, -0.22),
+            (0.2, -0.22),
+            (0.2, -0.56),
+        ]
+        cos_a = math.cos(angle)
+        sin_a = math.sin(angle)
+        for tx, ty in template:
+            px = tx * radius
+            py = ty * radius
+            rx = px * cos_a - py * sin_a
+            ry = px * sin_a + py * cos_a
+            points.append((int(cx + rx), int(cy + ry)))
+        return points
+
+    def _shape_angle(self, now):
+        if self.shape == "arrow":
+            return self.facing_angle
+        if self.shape == "square":
+            return self.facing_angle + math.pi / 4
+        if self.shape == "star7":
+            return now * 1.9 + self.neon_phase
+        return now * 0.5 + self.neon_phase * 0.5
+
+    def _draw_shape(self, surface, center, radius, color, width, angle):
+        radius = max(2, int(radius))
+        width = max(0, int(width))
+        if self.shape == "circle":
+            pygame.draw.circle(surface, color, center, radius, width)
+            return
+        if self.shape == "square":
+            points = self._regular_polygon(center, radius, 4, angle)
+            pygame.draw.polygon(surface, color, points, width)
+            return
+        if self.shape == "star7":
+            points = self._star_polygon(center, radius, radius * 0.45, 7, angle - math.pi / 2)
+            pygame.draw.polygon(surface, color, points, width)
+            return
+        if self.shape == "arrow":
+            points = self._arrow_polygon(center, radius, angle)
+            pygame.draw.polygon(surface, color, points, width)
+            return
+        pygame.draw.circle(surface, color, center, radius, width)
+
+    def _draw_neon_body(self, screen):
+        now = pygame.time.get_ticks() * 0.001
+        pulse = 0.5 + 0.5 * math.sin(now * self.neon_flicker + self.neon_phase)
+        twinkle = 0.5 + 0.5 * math.sin(now * (self.neon_flicker * 1.55) + self.neon_phase * 1.2)
+        glow_color = self._mix_color(self.neon_primary, self.neon_secondary, pulse)
+        rim_color = self._mix_color(glow_color, (255, 255, 255), 0.3 + twinkle * 0.2)
+        inner_color = self._mix_color(BG_COLOR, glow_color, 0.08 + pulse * 0.08)
+        angle = self._shape_angle(now)
+
+        base_r = int(self.radius)
+        tube_width = max(3, int(base_r * 0.3))
+        pad = int(base_r * 1.8) + 20
+        size = base_r * 2 + pad * 2
+        surf = pygame.Surface((size, size), pygame.SRCALPHA)
+        center = (size // 2, size // 2)
+
+        self._draw_shape(
+            surf,
+            center,
+            base_r - max(1, tube_width // 2),
+            (*inner_color, 160),
+            0,
+            angle,
+        )
+
+        for spread, alpha in ((10, 24), (7, 42), (4, 68)):
+            glow_radius = base_r + spread * (0.72 + twinkle * 0.22)
+            glow_width = tube_width + spread
+            self._draw_shape(
+                surf,
+                center,
+                glow_radius,
+                (*glow_color, int(alpha + pulse * 20)),
+                glow_width,
+                angle,
+            )
+
+        self._draw_shape(surf, center, base_r, (*glow_color, 235), tube_width, angle)
+        self._draw_shape(surf, center, base_r - 1, (*rim_color, 205), max(1, tube_width // 3), angle)
+        self._draw_shape(
+            surf,
+            center,
+            max(2, base_r - tube_width - 1),
+            (*self._mix_color(inner_color, self.neon_core, 0.2), 88),
+            1,
+            angle,
+        )
+
+        rect = surf.get_rect(center=(int(self.x), int(self.y)))
+        screen.blit(surf, rect.topleft)
     
     def update(self, dt, player_pos, projectiles, wave):
         dx = player_pos[0] - self.x
@@ -401,7 +538,8 @@ class Enemy:
         vy = dy / dist * self.speed
         self.x += vx * dt
         self.y += vy * dt
-        self.rotation = math.degrees(self.angle_toward(player_pos)) + 180
+        self.facing_angle = math.atan2(dy, dx)
+        self.rotation = math.degrees(self.facing_angle)
 
         if self.burn_timer > 0:
             self.burn_timer -= dt
@@ -441,20 +579,16 @@ class Enemy:
                 projectiles.append(proj)
 
     def draw(self, screen):
-        if self.sprite:
-            rotated = pygame.transform.rotate(self.sprite, self.rotation)
-            rect = rotated.get_rect(center=(int(self.x), int(self.y)))
-            screen.blit(rotated, rect.topleft)
-        else:
-            pygame.draw.circle(screen, (200, 200, 200), (int(self.x), int(self.y)), self.radius)
+        self._draw_neon_body(screen)
         if self.kind == "tank":
             if self.beam_charge > 0:
-                self._draw_beam(screen, (255, 200, 80), 4)
+                self._draw_beam(screen, (165, 255, 195), 5)
             if self.beam_active > 0:
-                self._draw_beam(screen, (255, 80, 40), 6)
+                self._draw_beam(screen, (100, 255, 140), 7)
         if self.burn_timer > 0:
-            pygame.draw.circle(screen, (255, 120, 60), (int(self.x), int(self.y)), self.radius + 4, 2)
-        hp_ratio = self.hp / self.max_hp
+            burn_color = self._mix_color((255, 120, 60), self.neon_secondary, 0.35)
+            pygame.draw.circle(screen, burn_color, (int(self.x), int(self.y)), self.radius + 4, 2)
+        hp_ratio = clamp(self.hp / self.max_hp, 0, 1)
         if hp_ratio < 1:
             bar_w = self.radius * 2
             bar_h = 4
@@ -466,7 +600,10 @@ class Enemy:
     def _draw_beam(self, screen, color, width):
         ex = self.x + math.cos(self.beam_angle) * self.beam_length
         ey = self.y + math.sin(self.beam_angle) * self.beam_length
+        glow = self._mix_color(color, (255, 255, 255), 0.35)
+        pygame.draw.line(screen, self._mix_color(color, BG_COLOR, 0.5), (self.x, self.y), (ex, ey), width + 6)
         pygame.draw.line(screen, color, (self.x, self.y), (ex, ey), width)
+        pygame.draw.line(screen, glow, (self.x, self.y), (ex, ey), max(1, width // 2))
 
     def beam_hits_player(self, player_pos):
         if self.beam_active <= 0:
@@ -509,7 +646,7 @@ class BossZone:
             surf = pygame.Surface((self.radius * 2 + 6, self.radius * 2 + 6), pygame.SRCALPHA)
             pygame.draw.circle(
                 surf,
-                (255, 120, 60, alpha),
+                (185, 110, 255, alpha),
                 (surf.get_width() // 2, surf.get_height() // 2),
                 self.radius,
                 3,
@@ -520,7 +657,7 @@ class BossZone:
             surf = pygame.Surface((self.radius * 2 + 8, self.radius * 2 + 8), pygame.SRCALPHA)
             pygame.draw.circle(
                 surf,
-                (255, 80, 40, alpha),
+                (150, 80, 255, alpha),
                 (surf.get_width() // 2, surf.get_height() // 2),
                 int(self.radius * 1.1),
             )
@@ -550,6 +687,7 @@ class Boss:
         self.burn_timer = 0.0
         self.burn_dps = 0.0
         self.fire_orb_hit_cd = 0.0
+        self.neon_phase = random.uniform(0.0, math.tau)
 
     def phase(self):
         ratio = max(0.0, min(1.0, self.hp / self.max_hp))
@@ -603,7 +741,7 @@ class Boss:
                     vx * (200 + 25 * phase),
                     vy * (200 + 25 * phase),
                     damage=damage_value,
-                    color=(255, 140, 80),
+                    color=(185, 110, 255),
                     radius=10,
                     owner="enemy",
                 )
@@ -644,18 +782,122 @@ class Boss:
         self.laser_hit_timer = 0.45
         return True
 
+    @staticmethod
+    def _draw_shape(surface, shape, center, radius, color, width, angle=0.0):
+        radius = max(2, int(radius))
+        width = max(0, int(width))
+        if shape == "circle":
+            pygame.draw.circle(surface, color, center, radius, width)
+            return
+        if shape == "square":
+            points = Enemy._regular_polygon(center, radius, 4, angle)
+            pygame.draw.polygon(surface, color, points, width)
+            return
+        if shape == "star7":
+            points = Enemy._star_polygon(center, radius, radius * 0.45, 7, angle - math.pi / 2)
+            pygame.draw.polygon(surface, color, points, width)
+            return
+        if shape == "arrow":
+            points = Enemy._arrow_polygon(center, radius, angle)
+            pygame.draw.polygon(surface, color, points, width)
+            return
+        pygame.draw.circle(surface, color, center, radius, width)
+
+    @staticmethod
+    def _draw_neon_tube(surface, shape, center, radius, color, thickness, angle=0.0, glow_scale=1.0):
+        inner_dark = Enemy._mix_color(BG_COLOR, color, 0.11)
+        highlight = Enemy._mix_color(color, (255, 255, 255), 0.5)
+        Boss._draw_shape(surface, shape, center, radius - max(1, thickness // 2), (*inner_dark, 150), 0, angle)
+        for spread, alpha in ((10, 22), (7, 40), (4, 62)):
+            Boss._draw_shape(
+                surface,
+                shape,
+                center,
+                radius + spread * 0.65,
+                (*color, int(alpha * glow_scale)),
+                thickness + spread,
+                angle,
+            )
+        Boss._draw_shape(surface, shape, center, radius, (*color, 235), thickness, angle)
+        Boss._draw_shape(surface, shape, center, radius - 1, (*highlight, 188), max(1, thickness // 3), angle)
+
     def draw(self, screen):
-        body = pygame.Rect(0, 0, 140, 80)
-        body.center = (int(self.x), int(self.y))
-        pygame.draw.rect(screen, (45, 55, 70), body, border_radius=12)
-        pygame.draw.rect(screen, (90, 110, 140), body, 3, border_radius=12)
-        pygame.draw.rect(screen, (30, 35, 45), (body.x - 18, body.y + 10, 18, 60), border_radius=8)
-        pygame.draw.rect(screen, (30, 35, 45), (body.right, body.y + 10, 18, 60), border_radius=8)
-        turret = pygame.Rect(0, 0, 60, 36)
-        turret.center = (int(self.x), int(self.y - 12))
-        pygame.draw.rect(screen, (70, 90, 120), turret, border_radius=8)
-        pygame.draw.rect(screen, (120, 150, 190), turret, 2, border_radius=8)
-        pygame.draw.circle(screen, (140, 200, 230), (int(self.x + 26), int(self.y - 12)), 8)
+        now = pygame.time.get_ticks() * 0.001
+        phase = self.phase()
+        pulse = 0.5 + 0.5 * math.sin(now * 2.2 + self.neon_phase)
+        spin = now * (0.55 + phase * 0.08)
+        violet_main = Enemy._mix_color((170, 90, 255), (205, 120, 255), pulse)
+        violet_soft = Enemy._mix_color((120, 65, 220), (165, 95, 245), pulse)
+        violet_hot = Enemy._mix_color((220, 175, 255), (250, 220, 255), 0.35 + pulse * 0.25)
+
+        size = int(self.radius * 6.0)
+        surf = pygame.Surface((size, size), pygame.SRCALPHA)
+        center = (size // 2, size // 2)
+
+        Boss._draw_neon_tube(
+            surf,
+            "square",
+            center,
+            self.radius + 18,
+            violet_soft,
+            thickness=6,
+            angle=spin * 0.55 + math.pi / 4,
+            glow_scale=1.0,
+        )
+        Boss._draw_neon_tube(
+            surf,
+            "circle",
+            center,
+            self.radius + 7,
+            violet_main,
+            thickness=6,
+            angle=0.0,
+            glow_scale=0.95,
+        )
+        Boss._draw_neon_tube(
+            surf,
+            "star7",
+            center,
+            self.radius - 2,
+            violet_main,
+            thickness=5,
+            angle=-spin * 1.1,
+            glow_scale=1.05,
+        )
+        Boss._draw_neon_tube(
+            surf,
+            "circle",
+            center,
+            self.radius * 0.52,
+            violet_hot,
+            thickness=4,
+            angle=0.0,
+            glow_scale=0.9,
+        )
+
+        shard_dist = self.radius + 26
+        shard_r = self.radius * 0.34
+        for i in range(4):
+            ang = spin * 1.7 + i * (math.tau / 4)
+            shard_center = (
+                int(center[0] + math.cos(ang) * shard_dist),
+                int(center[1] + math.sin(ang) * shard_dist),
+            )
+            Boss._draw_neon_tube(
+                surf,
+                "arrow",
+                shard_center,
+                shard_r,
+                violet_soft,
+                thickness=3,
+                angle=ang,
+                glow_scale=0.9,
+            )
+
+        pygame.draw.circle(surf, (255, 245, 255, 210), center, 5)
+        rect = surf.get_rect(center=(int(self.x), int(self.y)))
+        screen.blit(surf, rect.topleft)
+
         if self.burn_timer > 0:
             pygame.draw.circle(
                 screen,
@@ -665,13 +907,36 @@ class Boss:
                 3,
             )
         if self.state == "laser":
-            phase = self.phase()
+            laser_surf = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
             for i in range(6):
                 ang = self.laser_angle + i * (math.tau / 6)
                 ex = self.x + math.cos(ang) * WIDTH
                 ey = self.y + math.sin(ang) * WIDTH
                 width = 8 + phase * 2.5
-                pygame.draw.line(screen, (255, 160, 90), (self.x, self.y), (ex, ey), int(width))
+                beam_color = Enemy._mix_color(violet_main, violet_hot, 0.25 + (i % 2) * 0.35)
+                beam_core = Enemy._mix_color(beam_color, (255, 255, 255), 0.55)
+                pygame.draw.line(
+                    laser_surf,
+                    (*beam_color, 58),
+                    (self.x, self.y),
+                    (ex, ey),
+                    int(width + 10),
+                )
+                pygame.draw.line(
+                    laser_surf,
+                    (*beam_color, 135),
+                    (self.x, self.y),
+                    (ex, ey),
+                    int(width + 4),
+                )
+                pygame.draw.line(
+                    laser_surf,
+                    (*beam_core, 230),
+                    (self.x, self.y),
+                    (ex, ey),
+                    int(max(2, width)),
+                )
+            screen.blit(laser_surf, (0, 0))
 
 
 class Player:
@@ -1977,6 +2242,10 @@ class Game:
         else:
             step = (2 * max_spread) / (beams - 1)
             offsets = [(-max_spread + i * step) for i in range(beams)]
+            # Guarantee one beam straight ahead, even when beam count is even.
+            if not any(abs(off) <= 1e-6 for off in offsets):
+                center_idx = min(range(len(offsets)), key=lambda i: abs(offsets[i]))
+                offsets[center_idx] = 0.0
 
         base_dist = math.hypot(target_pos[0] - sx, target_pos[1] - sy) or 1.0
         beam_width = 8
