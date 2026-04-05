@@ -993,10 +993,6 @@ class Player:
         self.ultimate_cooldown = 0.0
         self.ultimate_cooldown_max = 10.0
         self.vector_overdrive_time = 0.0
-        self.constellation_laser_beacons = 4
-        self.constellation_laser_damage_mult = 0.35
-        self.constellation_laser_tick = 0.1
-        self.constellation_laser_duration = 10.0
         self.shockwave_cooldown = 7.0
         self.shockwave_timer = self.shockwave_cooldown
         self.shockwave_radius = 240
@@ -2318,7 +2314,7 @@ UPGRADE_POOL = [
     UpgradeChoice("proj_speed", "Proj Speed+", "Projectiles plus rapide."),
     UpgradeChoice("damage", "Degats+", "Degats augmentes."),
     UpgradeChoice("max_hp", "PV Max+", "Augmente la vie max."),
-    UpgradeChoice("fire_rate", "Cadence+", "Tire plus souvent."),
+    UpgradeChoice("fire_rate", "Cadence+", "Tire plus souvent et reduit le cooldown ulti de 0.1."),
     UpgradeChoice("bullets", "Multi-tir+", "Plus de projectiles par tir."),
     UpgradeChoice("fire_orb", "Orbe de feu", "Ajoute une boule de feu orbitale."),
     UpgradeChoice("rockets", "Lance roquette", "Lance des roquettes."),
@@ -2375,24 +2371,6 @@ CLASS_POOL = [
         "singularity",
         "Singularite Neon",
         "Trou noir qui attire puis explose.",
-    ),
-]
-
-LASER_CLASS_UPGRADES = [
-    UpgradeChoice(
-        "ulti_laser_cd",
-        "Ulti CDR",
-        "Reduit le cooldown de l'ulti Constellation Laser.",
-    ),
-    UpgradeChoice(
-        "ulti_laser_damage",
-        "Ulti Laser DMG",
-        "Augmente les degats par tick des rayons.",
-    ),
-    UpgradeChoice(
-        "ulti_laser_nodes",
-        "Ulti Balises+",
-        "Ajoute des balises a la constellation (max 12).",
     ),
 ]
 
@@ -2478,12 +2456,6 @@ class Game:
             return self.player.rocket_level
         if key == "fire_ring":
             return self.player.fire_ring_level
-        if key == "ulti_laser_cd":
-            return max(0, int(round((10.0 - self.player.ultimate_cooldown_max) / 0.7)))
-        if key == "ulti_laser_damage":
-            return max(0, int(round((self.player.constellation_laser_damage_mult - 0.35) / 0.05)))
-        if key == "ulti_laser_nodes":
-            return max(0, int((self.player.constellation_laser_beacons - 4) / 2))
         return 0
 
     def upgrade_max_level(self, key):
@@ -2501,12 +2473,6 @@ class Game:
             return 19
         if key == "fire_ring":
             return 10
-        if key == "ulti_laser_cd":
-            return 8
-        if key == "ulti_laser_damage":
-            return 10
-        if key == "ulti_laser_nodes":
-            return 4
         return None
 
     def upgrade_is_maxed(self, key):
@@ -2657,9 +2623,6 @@ class Game:
             "fire_ring": "fire_ring.png",
             "laser_orb":"laser_orb.png",
             "electroelf":"electroelf.png",
-            "ulti_laser_cd": "attack_speed.png",
-            "ulti_laser_damage": "damage.png",
-            "ulti_laser_nodes": "laser_orb.png",
         }
         for key, filename in mapping.items():
             path = os.path.join(base, filename)
@@ -2710,6 +2673,7 @@ class Game:
             self.player.hp += 50
         elif key == "fire_rate":
             self.player.fire_rate = max(0.08, self.player.fire_rate - 0.02)
+            self.player.ultimate_cooldown_max = max(0.5, self.player.ultimate_cooldown_max - 0.1)
         elif key == "bullets":
             self.player.bullets_per_shot = min(61, self.player.bullets_per_shot + 2)
         elif key == "fire_orb":
@@ -2756,12 +2720,6 @@ class Game:
                 self.player.rocket_count = min(10, self.player.rocket_count + 1)
             else:
                 self.player.rocket_cooldown = max(1.0, self.player.rocket_cooldown - 0.5)
-        elif key == "ulti_laser_cd":
-            self.player.ultimate_cooldown_max = max(4.0, self.player.ultimate_cooldown_max - 0.7)
-        elif key == "ulti_laser_damage":
-            self.player.constellation_laser_damage_mult += 0.05
-        elif key == "ulti_laser_nodes":
-            self.player.constellation_laser_beacons = min(12, self.player.constellation_laser_beacons + 2)
 
     def prepare_upgrade_choices(self):
         pool = [
@@ -2769,10 +2727,6 @@ class Game:
             for u in UPGRADE_POOL
             if not (self.player.fire_ring and u.key == "fire_orb") and not self.upgrade_is_maxed(u.key)
         ]
-        if self.selected_class and self.selected_class.key == "laser_master":
-            for u in LASER_CLASS_UPGRADES:
-                if not self.upgrade_is_maxed(u.key):
-                    pool.append(u)
         if self.player.laser_orb_level <= 0 and not self.upgrade_is_maxed("laser_orb"):
             pool.append(EPIC_UPGRADES[0])
         if not self.upgrade_is_maxed("electroelf"):
@@ -2998,6 +2952,29 @@ class Game:
         if self.boss.hp <= 0:
             self.on_boss_killed()
 
+    def ultimate_cadence_multiplier(self):
+        return clamp(0.9 / max(0.08, self.player.fire_rate), 1.0, 2.0)
+
+    def player_projectile_damage_value(self):
+        dmg_mult = 1.4 if self.player.haste > 0 else 1.0
+        if self.player.vector_overdrive_time > 0:
+            dmg_mult *= 1.55
+        return self.player.damage * dmg_mult
+
+    def constellation_node_count(self):
+        bullets_level = self.upgrade_level("bullets")
+        return int(clamp(4 + bullets_level // 3, 4, 12))
+
+    def constellation_tick_interval(self):
+        cadence_level = self.upgrade_level("fire_rate")
+        return max(0.06, 0.1 - cadence_level * 0.0015)
+
+    def constellation_duration(self):
+        speed_level = self.upgrade_level("speed")
+        bullets_level = self.upgrade_level("bullets")
+        bonus = min(2.0, bullets_level * 0.05 + speed_level * 0.02)
+        return 10.0 + bonus
+
     def try_activate_ultimate(self):
         if self.player.ultimate_charge < self.player.ultimate_max:
             return False
@@ -3041,16 +3018,16 @@ class Game:
 
     def _activate_constellation_laser_ultimate(self):
         self.player.ultimate_charge = 0
-        self.player.ultimate_beam_time = self.player.constellation_laser_duration
+        self.player.ultimate_beam_time = self.constellation_duration()
         self.player.ultimate_cooldown = 0.0
         self._clear_ultimate_effects()
         preferred_points = [(enemy.x, enemy.y) for enemy in self.enemies if enemy.hp > 0]
         if self.boss is not None and self.boss.hp > 0:
             preferred_points.append((self.boss.x, self.boss.y))
         constellation = UltimateConstellation(
-            node_count=self.player.constellation_laser_beacons,
+            node_count=self.constellation_node_count(),
             duration=self.player.ultimate_beam_time,
-            tick_interval=self.player.constellation_laser_tick,
+            tick_interval=self.constellation_tick_interval(),
             margin=120,
             preferred_points=preferred_points,
         )
@@ -3567,7 +3544,7 @@ class Game:
         for constellation in list(self.ultimate_constellations):
             constellation.update(dt)
             if constellation.should_tick():
-                tick_damage = self.player.damage * self.player.constellation_laser_damage_mult
+                tick_damage = self.player.damage * 0.35 * self.ultimate_cadence_multiplier()
                 beam_hit_radius = constellation.beam_width * 0.5
                 hit_enemies = set()
                 boss_hit = False
@@ -3638,7 +3615,7 @@ class Game:
         for blade in list(self.ultimate_prismatic_blades):
             blade.update(dt, (self.player.x, self.player.y))
             if blade.should_tick():
-                tick_damage = self.player.damage * 0.32 + self.wave * 0.45
+                touch_damage = self.player_projectile_damage_value()
                 hit_radius = blade.beam_width * 0.52
                 hit_enemies = set()
                 boss_hit = False
@@ -3654,9 +3631,9 @@ class Game:
                         if dist <= self.boss.radius + hit_radius:
                             boss_hit = True
                 for enemy in list(hit_enemies):
-                    self.damage_enemy(enemy, tick_damage)
+                    self.damage_enemy(enemy, touch_damage)
                 if boss_hit:
-                    self.damage_boss(tick_damage * 0.72)
+                    self.damage_boss(touch_damage)
             if blade.time_left <= 0:
                 self.ultimate_pulses.append(UltimatePulse(blade.x, blade.y, 180, duration=0.24))
                 self.ultimate_prismatic_blades.remove(blade)
