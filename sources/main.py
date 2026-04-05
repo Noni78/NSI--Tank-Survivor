@@ -1695,6 +1695,10 @@ class UltimatePrismaticBlade:
         self.reach = reach if reach is not None else math.hypot(WIDTH, HEIGHT) * 0.58
         self.beam_width = beam_width
         self.sweep_speed = sweep_speed
+        self.inner_radius = max(108.0, min(180.0, self.reach * 0.14))
+        self.total_sword_length = WIDTH * 0.5
+        self.hilt_ratio = 0.28
+        self.player_clearance = 120.0
 
     def update(self, dt, anchor_pos=None):
         self.time_left -= dt
@@ -1710,14 +1714,19 @@ class UltimatePrismaticBlade:
 
     def segments(self):
         elapsed = self.duration - self.time_left
+        hilt_len = self.total_sword_length * self.hilt_ratio
+        blade_len = self.total_sword_length * (1.0 - self.hilt_ratio)
         for i in range(self.blade_count):
             base = self.start_angle + i * (math.tau / self.blade_count)
             jitter = math.sin(elapsed * 2.2 + i * 0.7) * 0.22
             ang = base + elapsed * self.sweep_speed + jitter
-            sx = self.x - math.cos(ang) * self.reach * 0.18
-            sy = self.y - math.sin(ang) * self.reach * 0.18
-            ex = self.x + math.cos(ang) * self.reach
-            ey = self.y + math.sin(ang) * self.reach
+            # Keep the swords outside the player area so they never cross above the character.
+            inner = self.inner_radius + 6.0 * math.sin(elapsed * 2.6 + i * 0.9)
+            inner = max(inner, hilt_len + self.player_clearance)
+            sx = self.x + math.cos(ang) * inner
+            sy = self.y + math.sin(ang) * inner
+            ex = sx + math.cos(ang) * blade_len
+            ey = sy + math.sin(ang) * blade_len
             yield (sx, sy), (ex, ey)
 
     def draw(self, screen):
@@ -1725,28 +1734,142 @@ class UltimatePrismaticBlade:
             return
         ratio = clamp(self.time_left / max(0.001, self.duration), 0.0, 1.0)
         surf = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+
         for (sx, sy), (ex, ey) in self.segments():
+            dx = ex - sx
+            dy = ey - sy
+            seg_len = math.hypot(dx, dy)
+            if seg_len <= 1e-5:
+                continue
+            ux = dx / seg_len
+            uy = dy / seg_len
+            px = -uy
+            py = ux
+
+            # Sheath pass, slightly offset from the sword.
+            sheath_off = self.beam_width * 0.72
+            sheath_len = min(seg_len * 0.55, 420.0)
+            sh_sx = sx + px * sheath_off
+            sh_sy = sy + py * sheath_off
+            sh_ex = sh_sx + ux * sheath_len
+            sh_ey = sh_sy + uy * sheath_len
             pygame.draw.line(
                 surf,
-                (255, 80, 200, int(55 + 35 * ratio)),
-                (sx, sy),
-                (ex, ey),
-                self.beam_width + 10,
+                (120, 55, 180, int(110 + 55 * ratio)),
+                (int(sh_sx), int(sh_sy)),
+                (int(sh_ex), int(sh_ey)),
+                max(6, int(self.beam_width * 0.38)),
             )
             pygame.draw.line(
                 surf,
-                (145, 220, 255, int(130 + 80 * ratio)),
-                (sx, sy),
-                (ex, ey),
-                self.beam_width,
+                (220, 180, 255, int(120 + 75 * ratio)),
+                (int(sh_sx), int(sh_sy)),
+                (int(sh_ex), int(sh_ey)),
+                2,
+            )
+
+            # Neon trail.
+            pygame.draw.line(
+                surf,
+                (150, 222, 255, int(85 + 65 * ratio)),
+                (int(sx), int(sy)),
+                (int(ex), int(ey)),
+                max(4, int(self.beam_width * 0.34)),
             )
             pygame.draw.line(
                 surf,
-                (245, 250, 255, int(205 + 40 * ratio)),
-                (sx, sy),
-                (ex, ey),
-                max(2, int(self.beam_width * 0.34)),
+                (250, 252, 255, int(120 + 80 * ratio)),
+                (int(sx), int(sy)),
+                (int(ex), int(ey)),
+                2,
             )
+            # Epée vectorielle (sans sprite).
+            hilt_len = self.total_sword_length * self.hilt_ratio
+            blade_len = self.total_sword_length - hilt_len
+            blade_base_x = sx + ux * 2.0
+            blade_base_y = sy + uy * 2.0
+            tip_x = blade_base_x + ux * blade_len
+            tip_y = blade_base_y + uy * blade_len
+            handle_end_x = sx - ux * hilt_len
+            handle_end_y = sy - uy * hilt_len
+
+            guard_half = max(24.0, self.beam_width * 1.32)
+            handle_w = max(18.0, self.beam_width * 1.04)  # manche x2
+            blade_w = max(18.0, self.beam_width * 0.88)   # epée x2 en largeur
+            blade_mid_w = blade_w * 0.82
+            blade_mid_x = blade_base_x + ux * blade_len * 0.72
+            blade_mid_y = blade_base_y + uy * blade_len * 0.72
+            blade_near_tip_w = blade_w * 0.62
+            blade_near_tip_x = blade_base_x + ux * blade_len * 0.92
+            blade_near_tip_y = blade_base_y + uy * blade_len * 0.92
+
+            blade_pts = [
+                (int(blade_base_x + px * blade_w), int(blade_base_y + py * blade_w)),
+                (int(blade_mid_x + px * blade_mid_w), int(blade_mid_y + py * blade_mid_w)),
+                (int(blade_near_tip_x + px * blade_near_tip_w), int(blade_near_tip_y + py * blade_near_tip_w)),
+                (int(tip_x), int(tip_y)),
+                (int(blade_near_tip_x - px * blade_near_tip_w), int(blade_near_tip_y - py * blade_near_tip_w)),
+                (int(blade_mid_x - px * blade_mid_w), int(blade_mid_y - py * blade_mid_w)),
+                (int(blade_base_x - px * blade_w), int(blade_base_y - py * blade_w)),
+            ]
+            pygame.draw.polygon(surf, (105, 205, 255, int(138 + 82 * ratio)), blade_pts)
+            pygame.draw.polygon(surf, (228, 246, 255, int(205 + 40 * ratio)), blade_pts, 2)
+
+            fuller_end_x = blade_base_x + ux * blade_len * 0.83
+            fuller_end_y = blade_base_y + uy * blade_len * 0.83
+            pygame.draw.line(
+                surf,
+                (255, 255, 255, int(170 + 70 * ratio)),
+                (int(blade_base_x), int(blade_base_y)),
+                (int(fuller_end_x), int(fuller_end_y)),
+                max(1, int(self.beam_width * 0.12)),
+            )
+
+            guard_l = (sx + px * guard_half, sy + py * guard_half)
+            guard_r = (sx - px * guard_half, sy - py * guard_half)
+            pygame.draw.line(
+                surf,
+                (115, 225, 255, int(150 + 72 * ratio)),
+                (int(guard_l[0]), int(guard_l[1])),
+                (int(guard_r[0]), int(guard_r[1])),
+                max(6, int(self.beam_width * 0.32)),
+            )
+            pygame.draw.line(
+                surf,
+                (255, 255, 255, int(175 + 65 * ratio)),
+                (int(guard_l[0]), int(guard_l[1])),
+                (int(guard_r[0]), int(guard_r[1])),
+                2,
+            )
+
+            pygame.draw.line(
+                surf,
+                (66, 44, 92, int(178 + 60 * ratio)),
+                (int(sx), int(sy)),
+                (int(handle_end_x), int(handle_end_y)),
+                int(handle_w + 5),
+            )
+            pygame.draw.line(
+                surf,
+                (230, 182, 255, int(188 + 52 * ratio)),
+                (int(sx), int(sy)),
+                (int(handle_end_x), int(handle_end_y)),
+                3,
+            )
+            pommel_r = max(5, int(handle_w * 1.05))
+            pygame.draw.circle(
+                surf,
+                (95, 210, 255, int(170 + 68 * ratio)),
+                (int(handle_end_x), int(handle_end_y)),
+                pommel_r + 2,
+            )
+            pygame.draw.circle(
+                surf,
+                (255, 255, 255, int(192 + 56 * ratio)),
+                (int(handle_end_x), int(handle_end_y)),
+                max(2, pommel_r // 2 + 1),
+            )
+
         screen.blit(surf, (0, 0))
 
 
@@ -3148,14 +3271,13 @@ class Game:
         base_angle = math.atan2(target_pos[1] - sy, target_pos[0] - sx)
         level = max(0, int((self.player.bullets_per_shot - 1) / 2))
         pickup_bonus = 1 if self.player.multishot > 0 else 0
-        beams = clamp(1 + level + pickup_bonus, 1, 12)
+        beams = int(clamp(1 + level + pickup_bonus, 1, 12))
         max_spread = 0.35 + (beams / 80) * 0.95
         if beams == 1:
             offsets = [0.0]
         else:
             step = (2 * max_spread) / (beams - 1)
             offsets = [(-max_spread + i * step) for i in range(beams)]
-            # Guarantee one beam straight ahead, even when beam count is even.
             if not any(abs(off) <= 1e-6 for off in offsets):
                 center_idx = min(range(len(offsets)), key=lambda i: abs(offsets[i]))
                 offsets[center_idx] = 0.0
