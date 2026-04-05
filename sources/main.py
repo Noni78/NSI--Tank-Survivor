@@ -1029,7 +1029,7 @@ class Player:
                 return None
         return None
 
-    def update(self, dt, keys):
+    def update(self, dt, keys, move_input=None):
         vx = 0
         vy = 0
         if keys[pygame.K_LEFT] or keys[pygame.K_q]:
@@ -1040,6 +1040,10 @@ class Player:
             vy -= 1
         if keys[pygame.K_DOWN] or keys[pygame.K_s]:
             vy += 1
+        if move_input is not None:
+            mvx, mvy = move_input
+            vx += mvx
+            vy += mvy
 
         if vx or vy:
             norm = math.hypot(vx, vy)
@@ -2553,8 +2557,291 @@ class Game:
         self.pending_wave_spawns = 0
         self.wave_total = 0
         self.wave_killed = 0
+        self.wave_spawn_remaining = 0
+        self.wave_spawn_interval = 0.0
+        self.wave_spawn_timer = 0.0
         self.gem_rush_timer = 0.0
         self.boss_death_timer = 0.0
+        self.gamepad = None
+        self.gamepad_name = ""
+        self.gamepad_deadzone = 0.22
+        self.gamepad_aim_deadzone = 0.20
+        self.gamepad_axis_centers = []
+        self.gamepad_aim_axes = (2, 3)
+        self.pad_btn_ulti = 3
+        self.pad_btn_shockwave = 2
+        self.pad_btn_pause = {7, 9}
+        self.pad_btn_confirm = {0, 1}
+        self.menu_selected_index = 0
+        self.menu_nav_hold = (0, 0)
+        self.menu_nav_repeat_timer = 0.0
+        self.refresh_gamepad()
+
+    def refresh_gamepad(self):
+        if not pygame.joystick.get_init():
+            pygame.joystick.init()
+        self.gamepad = None
+        if pygame.joystick.get_count() <= 0:
+            self.gamepad_name = ""
+            self.gamepad_axis_centers = []
+            return
+        js = pygame.joystick.Joystick(0)
+        if not js.get_init():
+            js.init()
+        self.gamepad = js
+        self.gamepad_name = js.get_name().lower()
+        # XInput default for 8BitDo Ultimate on Windows.
+        self.pad_btn_ulti = 3
+        self.pad_btn_shockwave = 2
+        self.pad_btn_pause = {7, 9}
+        self.pad_btn_confirm = {0, 1}
+        # Switch-like fallback profile.
+        if "switch" in self.gamepad_name or "nintendo" in self.gamepad_name:
+            self.pad_btn_ulti = 2
+            self.pad_btn_shockwave = 3
+            self.pad_btn_pause = {9, 7}
+            self.pad_btn_confirm = {1, 0}
+        self.calibrate_gamepad_axes()
+
+    def calibrate_gamepad_axes(self):
+        if self.gamepad is None:
+            self.gamepad_axis_centers = []
+            self.gamepad_aim_axes = (2, 3)
+            return
+        axis_count = self.gamepad.get_numaxes()
+        self.gamepad_axis_centers = [self._gamepad_axis(i) for i in range(axis_count)]
+        candidates = []
+        for a, b in ((2, 3), (3, 4), (2, 4), (4, 5), (2, 5)):
+            if a < axis_count and b < axis_count:
+                candidates.append((a, b))
+        if not candidates:
+            if axis_count >= 4:
+                candidates = [(2, 3)]
+            elif axis_count >= 2:
+                candidates = [(0, 1)]
+            else:
+                candidates = [(0, 0)]
+
+        def pair_score(pair):
+            a, b = pair
+            ca = self.gamepad_axis_centers[a]
+            cb = self.gamepad_axis_centers[b]
+            # Prefer axes centered near 0 (sticks), avoid trigger-like resting axes.
+            return abs(ca) + abs(cb) + abs(abs(ca) - abs(cb)) * 0.35
+
+        self.gamepad_aim_axes = min(candidates, key=pair_score)
+
+    @staticmethod
+    def _axis_normalized(value, deadzone):
+        mag = abs(value)
+        if mag <= deadzone:
+            return 0.0
+        scaled = (mag - deadzone) / max(1e-6, (1.0 - deadzone))
+        return math.copysign(clamp(scaled, 0.0, 1.0), value)
+
+    def _gamepad_axis(self, idx):
+        if self.gamepad is None:
+            return 0.0
+        if idx < 0 or idx >= self.gamepad.get_numaxes():
+            return 0.0
+        return float(self.gamepad.get_axis(idx))
+
+    def _gamepad_button(self, idx):
+        if self.gamepad is None:
+            return False
+        if idx < 0 or idx >= self.gamepad.get_numbuttons():
+            return False
+        return bool(self.gamepad.get_button(idx))
+
+    def _gamepad_button_any(self, indices):
+        return any(self._gamepad_button(idx) for idx in indices)
+
+    def get_gamepad_input(self):
+        result = {
+            "connected": False,
+            "move": (0.0, 0.0),
+            "aim": (0.0, 0.0),
+            "aim_active": False,
+            "menu_dir": (0, 0),
+            "confirm_pressed": False,
+            "ulti_pressed": False,
+            "shockwave_pressed": False,
+            "pause_pressed": False,
+        }
+        if self.gamepad is None:
+            return result
+
+        result["connected"] = True
+        lx = self._axis_normalized(self._gamepad_axis(0), self.gamepad_deadzone)
+        ly = self._axis_normalized(self._gamepad_axis(1), self.gamepad_deadzone)
+
+        # D-pad via hat.
+        dpx = 0
+        dpy = 0
+        if self.gamepad.get_numhats() > 0:
+            hx, hy = self.gamepad.get_hat(0)
+            dpx += hx
+            dpy += -hy
+        # D-pad via buttons fallback.
+        if self._gamepad_button(14):
+            dpx += 1
+        if self._gamepad_button(13):
+            dpx -= 1
+        if self._gamepad_button(12):
+            dpy += 1
+        if self._gamepad_button(11):
+            dpy -= 1
+
+        mvx = lx + dpx
+        mvy = ly + dpy
+        mv_len = math.hypot(mvx, mvy)
+        if mv_len > 1.0:
+            mvx /= mv_len
+            mvy /= mv_len
+        result["move"] = (mvx, mvy)
+
+        # Right stick mapping is calibrated once when the controller is connected.
+        aim_ax, aim_ay = self.gamepad_aim_axes
+        rx = self._gamepad_axis(aim_ax)
+        ry = self._gamepad_axis(aim_ay)
+        rx = self._axis_normalized(rx, self.gamepad_aim_deadzone)
+        ry = self._axis_normalized(ry, self.gamepad_aim_deadzone)
+        result["aim"] = (rx, ry)
+        result["aim_active"] = (rx * rx + ry * ry) > 0.01
+
+        # Menu direction uses stick + d-pad.
+        menu_x = dpx
+        menu_y = dpy
+        if menu_x == 0 and abs(lx) > 0.55:
+            menu_x = -1 if lx < 0 else 1
+        if menu_y == 0 and abs(ly) > 0.55:
+            menu_y = -1 if ly < 0 else 1
+        if abs(menu_x) >= abs(menu_y):
+            menu_y = 0
+        else:
+            menu_x = 0
+        result["menu_dir"] = (int(menu_x), int(menu_y))
+
+        result["confirm_pressed"] = self._gamepad_button_any(self.pad_btn_confirm)
+        result["ulti_pressed"] = self._gamepad_button(self.pad_btn_ulti)
+        result["shockwave_pressed"] = self._gamepad_button(self.pad_btn_shockwave)
+        result["pause_pressed"] = self._gamepad_button_any(self.pad_btn_pause)
+        return result
+
+    def move_menu_selection(self, direction):
+        if not self.ui_buttons:
+            self.menu_selected_index = 0
+            return
+        if self.menu_selected_index < 0 or self.menu_selected_index >= len(self.ui_buttons):
+            self.menu_selected_index = 0
+            return
+        dx_dir, dy_dir = direction
+        current_rect = self.ui_buttons[self.menu_selected_index]["rect"]
+        cx = current_rect.centerx
+        cy = current_rect.centery
+        best_idx = None
+        best_score = None
+        for idx, btn in enumerate(self.ui_buttons):
+            if idx == self.menu_selected_index:
+                continue
+            rect = btn["rect"]
+            dx = rect.centerx - cx
+            dy = rect.centery - cy
+            if dx_dir < 0 and dx >= -1:
+                continue
+            if dx_dir > 0 and dx <= 1:
+                continue
+            if dy_dir < 0 and dy >= -1:
+                continue
+            if dy_dir > 0 and dy <= 1:
+                continue
+            primary = abs(dx) if dx_dir != 0 else abs(dy)
+            secondary = abs(dy) if dx_dir != 0 else abs(dx)
+            score = primary * 3.0 + secondary
+            if best_score is None or score < best_score:
+                best_score = score
+                best_idx = idx
+        if best_idx is not None:
+            self.menu_selected_index = best_idx
+            return
+        # Fallback cycle.
+        if dx_dir < 0 or dy_dir < 0:
+            self.menu_selected_index = (self.menu_selected_index - 1) % len(self.ui_buttons)
+        elif dx_dir > 0 or dy_dir > 0:
+            self.menu_selected_index = (self.menu_selected_index + 1) % len(self.ui_buttons)
+
+    def update_menu_navigation(self, dt, pad_input):
+        if self.state not in ("class_select", "upgrade", "game_over", "pause"):
+            self.menu_nav_hold = (0, 0)
+            self.menu_nav_repeat_timer = 0.0
+            return
+        if not self.ui_buttons:
+            return
+        if self.menu_selected_index >= len(self.ui_buttons):
+            self.menu_selected_index = 0
+        direction = pad_input["menu_dir"]
+        if direction == (0, 0):
+            self.menu_nav_hold = (0, 0)
+            self.menu_nav_repeat_timer = 0.0
+            return
+        if direction != self.menu_nav_hold:
+            self.menu_nav_hold = direction
+            self.move_menu_selection(direction)
+            self.menu_nav_repeat_timer = 0.22
+            return
+        self.menu_nav_repeat_timer -= dt
+        while self.menu_nav_repeat_timer <= 0:
+            self.move_menu_selection(direction)
+            self.menu_nav_repeat_timer += 0.10
+
+    def activate_selected_menu_button(self):
+        if not self.ui_buttons:
+            return False
+        if self.menu_selected_index < 0 or self.menu_selected_index >= len(self.ui_buttons):
+            self.menu_selected_index = 0
+        btn = self.ui_buttons[self.menu_selected_index]
+        if self.state == "class_select":
+            self.select_class(btn["class_choice"])
+            return True
+        if self.state == "upgrade":
+            self.apply_upgrade(btn["choice"].key)
+            if self.pending_upgrades > 0:
+                self.pending_upgrades -= 1
+            if self.pending_wave_spawns > 0:
+                self.projectiles.clear()
+                self.spawn_wave(self.wave)
+                self.pending_wave_spawns -= 1
+            if self.pending_upgrades > 0 and self.start_upgrade():
+                pass
+            else:
+                self.state = "playing"
+                self.ui_buttons = []
+            return True
+        if self.state == "game_over":
+            if btn["action"] == "replay":
+                self.reset_game()
+            else:
+                return "quit"
+            return True
+        if self.state == "pause":
+            if btn["action"] == "resume":
+                self.state = "playing"
+            elif btn["action"] == "replay":
+                self.reset_game()
+            else:
+                return "quit"
+            return True
+        return False
+
+    def toggle_pause(self):
+        if self.state == "playing":
+            self.state = "pause"
+            self.build_pause_buttons()
+            return True
+        if self.state == "pause":
+            self.state = "playing"
+            return True
+        return False
 
     def upgrade_level(self, key):
         if key == "speed":
@@ -2663,6 +2950,9 @@ class Game:
         self.pending_wave_spawns = 0
         self.wave_total = 0
         self.wave_killed = 0
+        self.wave_spawn_remaining = 0
+        self.wave_spawn_interval = 0.0
+        self.wave_spawn_timer = 0.0
         self.gem_rush_timer = 0.0
         self.boss_death_timer = 0.0
         self.selected_class = None
@@ -2678,6 +2968,7 @@ class Game:
 
     def build_class_select_buttons(self):
         self.ui_buttons = []
+        self.menu_selected_index = 0
         panel_w = int(WIDTH * 0.84)
         panel_h = int(HEIGHT * 0.68)
         panel_x = (WIDTH - panel_w) / 2
@@ -2758,21 +3049,33 @@ class Game:
                 icons[key] = None
         return icons
 
+    def spawn_random_wave_enemy(self, wave):
+        x, y = random_spawn_point()
+        kind = random.choices(
+            ["basic", "fast", "tank", "shooter"],
+            weights=[70, 10, 10, 10],
+        )[0]
+        self.enemies.append(Enemy(x, y, kind, wave))
+
 
     def spawn_wave(self, wave):
         self.enemies.clear()
         self.boss = None
         self.boss_zones.clear()
-        total = 8 + int(wave * 1.3)
+        total = 14 + int(wave * 2.2)
         self.wave_total = total
         self.wave_killed = 0
-        for _ in range(total):
-            x, y = random_spawn_point()
-            kind = random.choices(
-                ["basic", "fast", "tank", "shooter"],
-                weights=[70, 10, 10, 10],
-            )[0]
-            self.enemies.append(Enemy(x, y, kind, wave))
+        initial_count = max(1, int(total * 0.5))
+        delayed_count = max(0, total - initial_count)
+        for _ in range(initial_count):
+            self.spawn_random_wave_enemy(wave)
+        self.wave_spawn_remaining = delayed_count
+        if delayed_count > 0:
+            self.wave_spawn_interval = 10.0 / delayed_count
+            self.wave_spawn_timer = self.wave_spawn_interval
+        else:
+            self.wave_spawn_interval = 0.0
+            self.wave_spawn_timer = 0.0
         if wave % 5 == 0:
             self.boss = Boss(wave)
 
@@ -2865,6 +3168,7 @@ class Game:
 
     def build_upgrade_buttons(self):
         self.ui_buttons = []
+        self.menu_selected_index = 0
         panel_w = int(WIDTH * 0.8)
         panel_h = int(HEIGHT * 0.8)
         panel_x = (WIDTH - panel_w) / 2
@@ -2881,6 +3185,7 @@ class Game:
 
     def build_game_over_buttons(self):
         self.ui_buttons = []
+        self.menu_selected_index = 0
         w, h = 200, 50
         panel_w = 520
         panel_h = 240
@@ -2894,6 +3199,7 @@ class Game:
 
     def build_pause_buttons(self):
         self.ui_buttons = []
+        self.menu_selected_index = 0
         w, h = 200, 50
         panel_w = 520
         panel_h = 220
@@ -2979,6 +3285,9 @@ class Game:
             return
         bx, by = self.boss.x, self.boss.y
         self.boss = None
+        self.wave_spawn_remaining = 0
+        self.wave_spawn_interval = 0.0
+        self.wave_spawn_timer = 0.0
         self.boss_zones.clear()
         for enemy in list(self.enemies):
             self.explosions.append(Explosion(enemy.x, enemy.y, 40, duration=0.3))
@@ -3451,7 +3760,14 @@ class Game:
                 self.state = "wave_clear"
 
         keys = pygame.key.get_pressed()
-        self.player.update(dt, keys)
+        pad_input = self.get_gamepad_input()
+        self.player.update(dt, keys, move_input=pad_input["move"])
+        if self.state == "playing" and self.wave_spawn_remaining > 0:
+            self.wave_spawn_timer -= dt
+            while self.wave_spawn_remaining > 0 and self.wave_spawn_timer <= 0:
+                self.spawn_random_wave_enemy(self.wave)
+                self.wave_spawn_remaining -= 1
+                self.wave_spawn_timer += self.wave_spawn_interval
         if self.player.rocket_count > 0:
             self.player.rocket_timer += dt
             while self.player.rocket_timer >= self.player.rocket_cooldown:
@@ -3463,7 +3779,11 @@ class Game:
             )
         manual_fire = pygame.mouse.get_pressed(num_buttons=3)[0] or keys[pygame.K_SPACE]
         target_pos = pygame.mouse.get_pos()
-        if not manual_fire:
+        if pad_input["aim_active"]:
+            ax, ay = pad_input["aim"]
+            target_pos = (self.player.x + ax * 1200, self.player.y + ay * 1200)
+            manual_fire = False
+        elif not manual_fire:
             nearest = self.get_nearest_enemy()
             if nearest:
                 target_pos = (nearest.x, nearest.y)
@@ -3911,7 +4231,12 @@ class Game:
             if pulse.time_left <= 0:
                 self.pulse_effects.remove(pulse)
 
-        if self.state == "playing" and not self.enemies and self.boss is None:
+        if (
+            self.state == "playing"
+            and not self.enemies
+            and self.boss is None
+            and self.wave_spawn_remaining <= 0
+        ):
             self.wave += 1
             self.pending_upgrades += 1
             self.pending_wave_spawns += 1
@@ -4195,10 +4520,10 @@ class Game:
 
         mouse_pos = pygame.mouse.get_pos()
         epic_keys = {u.key for u in EPIC_UPGRADES}
-        for btn in self.ui_buttons:
+        for idx, btn in enumerate(self.ui_buttons):
             rect = btn["rect"]
             choice = btn["choice"]
-            hovered = rect.collidepoint(mouse_pos)
+            hovered = rect.collidepoint(mouse_pos) or idx == self.menu_selected_index
             is_epic = choice.key in epic_keys
             if is_epic:
                 color = (40, 34, 72) if hovered else (28, 24, 56)
@@ -4369,10 +4694,10 @@ class Game:
             self.screen.blit(preview, img_rect.topleft)
 
         mouse_pos = pygame.mouse.get_pos()
-        for btn in self.ui_buttons:
+        for idx, btn in enumerate(self.ui_buttons):
             rect = btn["rect"]
             class_choice = btn["class_choice"]
-            hovered = rect.collidepoint(mouse_pos)
+            hovered = rect.collidepoint(mouse_pos) or idx == self.menu_selected_index
             color = (24, 38, 60) if hovered else (14, 24, 42)
             border = (120, 215, 255) if hovered else (90, 175, 230)
             card_glow = pygame.Surface((rect.width + 12, rect.height + 12), pygame.SRCALPHA)
@@ -4423,10 +4748,10 @@ class Game:
         self.screen.blit(hint, (panel_rect.centerx - hint.get_width() / 2, panel_rect.y + 110))
 
         mouse_pos = pygame.mouse.get_pos()
-        for btn in self.ui_buttons:
+        for idx, btn in enumerate(self.ui_buttons):
             rect = btn["rect"]
             action = btn["action"]
-            hovered = rect.collidepoint(mouse_pos)
+            hovered = rect.collidepoint(mouse_pos) or idx == self.menu_selected_index
             color = (22, 36, 56) if hovered else (14, 24, 40)
             pygame.draw.rect(self.screen, color, rect, border_radius=10)
             pygame.draw.rect(self.screen, (95, 195, 245), rect, 2, border_radius=10)
@@ -4455,10 +4780,10 @@ class Game:
         self.screen.blit(title, (panel_rect.centerx - title.get_width() / 2, panel_rect.y + 26))
 
         mouse_pos = pygame.mouse.get_pos()
-        for btn in self.ui_buttons:
+        for idx, btn in enumerate(self.ui_buttons):
             rect = btn["rect"]
             action = btn["action"]
-            hovered = rect.collidepoint(mouse_pos)
+            hovered = rect.collidepoint(mouse_pos) or idx == self.menu_selected_index
             color = (22, 36, 56) if hovered else (14, 24, 40)
             pygame.draw.rect(self.screen, color, rect, border_radius=10)
             pygame.draw.rect(self.screen, (95, 195, 245), rect, 2, border_radius=10)
@@ -4548,21 +4873,32 @@ class Game:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
+                if event.type in (pygame.JOYDEVICEADDED, pygame.JOYDEVICEREMOVED):
+                    self.refresh_gamepad()
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_o:
                     self.cheats_enabled = not self.cheats_enabled
                     self.cheat_buttons = []
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    if self.state == "playing":
-                        self.state = "pause"
-                        self.build_pause_buttons()
-                    elif self.state == "pause":
-                        self.state = "playing"
+                    self.toggle_pause()
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_a:
                     if self.state == "playing":
                         self.try_activate_ultimate()
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_e:
                     if self.state == "playing":
                         self.try_activate_shockwave()
+                if event.type == pygame.JOYBUTTONDOWN:
+                    if event.button in self.pad_btn_pause:
+                        self.toggle_pause()
+                    if self.state == "playing":
+                        if event.button == self.pad_btn_ulti:
+                            self.try_activate_ultimate()
+                        if event.button == self.pad_btn_shockwave:
+                            self.try_activate_shockwave()
+                    if self.state in ("class_select", "upgrade", "game_over", "pause"):
+                        if event.button in self.pad_btn_confirm:
+                            action_result = self.activate_selected_menu_button()
+                            if action_result == "quit":
+                                running = False
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     if self.state == "class_select":
                         for btn in self.ui_buttons:
@@ -4615,6 +4951,7 @@ class Game:
                                 self.cheat_buttons = []
                                 break
 
+            self.update_menu_navigation(dt, self.get_gamepad_input())
             if self.state in ("playing", "wave_clear", "boss_death"):
                 self.update(dt)
 
