@@ -4057,7 +4057,7 @@ class Game:
         for blade in list(self.ultimate_prismatic_blades):
             blade.update(dt, (self.player.x, self.player.y))
             if blade.should_tick():
-                touch_damage = self.player_projectile_damage_value()
+                touch_damage = self.player_projectile_damage_value() * 4.0
                 hit_radius = blade.beam_width * 0.52
                 hit_enemies = set()
                 boss_hit = False
