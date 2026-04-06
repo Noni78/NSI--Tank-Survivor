@@ -183,6 +183,14 @@ class UpgradePickup:
         self.y = y
         self.type = upgrade_type
         self.radius = 16
+        self.vx = 0.0
+        self.vy = 0.0
+        self.attract = 520.0
+        self.max_speed = 540.0
+        self.drag = 0.9
+        self.pickup_range = 260.0
+        self.magnet_locked = False
+        self.magnet_time = 0.0
         self.time_left = 15.0
         self.sprite = self.load_sprite()
         self.color = {
@@ -230,8 +238,40 @@ class UpgradePickup:
         else:
             pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
 
-    def update(self, dt):
+    def update(self, dt, player_pos=None):
         self.time_left -= dt
+        if player_pos is None:
+            return
+        dx = player_pos[0] - self.x
+        dy = player_pos[1] - self.y
+        dist = math.hypot(dx, dy)
+        if not self.magnet_locked and dist <= self.pickup_range:
+            self.magnet_locked = True
+            self.magnet_time = 0.0
+        if not self.magnet_locked and dist > self.pickup_range:
+            self.vx *= 0.82
+            self.vy *= 0.82
+            return
+        if self.magnet_locked:
+            self.magnet_time += dt
+        ramp_force = 1.0 + min(7.0, self.magnet_time * 2.1)
+        ramp_speed = 1.0 + min(6.0, self.magnet_time * 1.7)
+        drag = min(0.98, self.drag + 0.06) if self.magnet_locked else self.drag
+        dist = dist or 1.0
+        ax = dx / dist * (self.attract * ramp_force)
+        ay = dy / dist * (self.attract * ramp_force)
+        self.vx += ax * dt
+        self.vy += ay * dt
+        self.vx *= drag
+        self.vy *= drag
+        speed = math.hypot(self.vx, self.vy)
+        max_speed = self.max_speed * ramp_speed
+        if speed > max_speed:
+            scale = max_speed / speed
+            self.vx *= scale
+            self.vy *= scale
+        self.x += self.vx * dt
+        self.y += self.vy * dt
 
 class ExpGem:
     _sprite_base = None
@@ -242,13 +282,15 @@ class ExpGem:
         self.y = y
         self.amount = amount
         self.radius = 6
-        self.collect_radius = 30
+        self.collect_radius = 42
         self.vx = 0.0
         self.vy = 0.0
-        self.attract = 140.0
-        self.max_speed = 160.0
-        self.drag = 0.9
-        self.pickup_range = 50.0
+        self.attract = 340.0
+        self.max_speed = 420.0
+        self.drag = 0.92
+        self.pickup_range = 220.0
+        self.magnet_locked = False
+        self.magnet_time = 0.0
         self.time_left = 12.0
         self.rush_active = False
         self.rush_time = 0.0
@@ -288,20 +330,29 @@ class ExpGem:
         dx = player_pos[0] - self.x
         dy = player_pos[1] - self.y
         dist = math.hypot(dx, dy)
-        if dist > self.pickup_range:
+        if not self.magnet_locked and dist <= self.pickup_range:
+            self.magnet_locked = True
+            self.magnet_time = 0.0
+        if not self.magnet_locked and dist > self.pickup_range:
             self.vx = 0.0
             self.vy = 0.0
             return
+        if self.magnet_locked:
+            self.magnet_time += dt
+        ramp_force = 1.0 + min(8.0, self.magnet_time * 2.4)
+        ramp_speed = 1.0 + min(7.0, self.magnet_time * 1.9)
+        drag = min(0.985, self.drag + 0.05) if self.magnet_locked else self.drag
         dist = dist or 1.0
-        ax = dx / dist * self.attract
-        ay = dy / dist * self.attract
+        ax = dx / dist * (self.attract * ramp_force)
+        ay = dy / dist * (self.attract * ramp_force)
         self.vx += ax * dt
         self.vy += ay * dt
-        self.vx *= self.drag
-        self.vy *= self.drag
+        self.vx *= drag
+        self.vy *= drag
         speed = math.hypot(self.vx, self.vy)
-        if speed > self.max_speed:
-            scale = self.max_speed / speed
+        max_speed = self.max_speed * ramp_speed
+        if speed > max_speed:
+            scale = max_speed / speed
             self.vx *= scale
             self.vy *= scale
         self.x += self.vx * dt
@@ -1762,7 +1813,7 @@ class UltimatePrismaticBlade:
         self.sweep_speed = sweep_speed
         self.inner_radius = max(108.0, min(180.0, self.reach * 0.14))
         self.total_sword_length = WIDTH * 0.5
-        self.hilt_ratio = 0.28
+        self.hilt_ratio = 0.22
         self.player_clearance = 120.0
 
     def update(self, dt, anchor_pos=None):
@@ -2637,6 +2688,7 @@ class Game:
         self.menu_selected_index = 0
         self.menu_nav_hold = (0, 0)
         self.menu_nav_repeat_timer = 0.0
+        self.base_fire_enabled = True
         self.refresh_gamepad()
 
     def refresh_gamepad(self):
@@ -2833,6 +2885,10 @@ class Game:
             self.menu_selected_index = (self.menu_selected_index + 1) % len(self.ui_buttons)
 
     def update_menu_navigation(self, dt, pad_input):
+        if self.gamepad is None:
+            self.menu_nav_hold = (0, 0)
+            self.menu_nav_repeat_timer = 0.0
+            return
         if self.state not in ("class_select", "upgrade", "game_over", "pause"):
             self.menu_nav_hold = (0, 0)
             self.menu_nav_repeat_timer = 0.0
@@ -3020,6 +3076,7 @@ class Game:
         self.selected_class = None
         self.selected_ultimate_key = "singularity"
         self.ultimate_boss_boost = 0
+        self.base_fire_enabled = True
         self.spawn_wave(self.wave)
         self.prepare_class_choices()
         self.state = "class_select"
@@ -3463,6 +3520,50 @@ class Game:
             dmg_mult *= 1.55
         return self.player.damage * dmg_mult
 
+    def upgrade_force_value(self):
+        return max(0.0, float(self.player.damage))
+
+    def fire_orb_impact_damage_value(self):
+        base = 4.0 + self.player.fire_orb_level * 1.5
+        return base + 0.55 * self.upgrade_force_value()
+
+    def fire_orb_burn_enemy_dps_value(self, enemy):
+        base = 4.0 + enemy.max_hp * 0.05
+        return base + 0.20 * self.upgrade_force_value()
+
+    def fire_orb_burn_boss_dps_value(self):
+        if self.boss is None:
+            return 0.0
+        base = 6.0 + self.boss.max_hp * 0.012
+        return base + 0.16 * self.upgrade_force_value()
+
+    def fire_ring_burn_dps_value(self):
+        base = self.player.fire_ring_burn_dps
+        return base + 0.24 * self.upgrade_force_value()
+
+    def laser_orb_damage_value(self):
+        base = self.player.laser_orb_damage
+        return base + 0.42 * self.upgrade_force_value()
+
+    def electroelf_damage_value(self):
+        base = self.player.electroelf_damage
+        return base + 0.95 * self.upgrade_force_value()
+
+    def rocket_damage_value(self):
+        base = 35.0 + self.player.rocket_level * 2.0
+        return base + 0.60 * self.upgrade_force_value()
+
+    def shockwave_damage_value(self):
+        base = self.wave * 4.0
+        return base + self.player.shockwave_damage * self.upgrade_force_value()
+
+    def shockwave_radius_value(self):
+        base_radius = float(self.player.shockwave_radius)
+        target_radius = WIDTH * 0.5
+        # Boss tous les 5 niveaux -> environ 20 boss vaincus vers la vague 100.
+        t = clamp(self.ultimate_boss_level() / 20.0, 0.0, 1.0)
+        return int(base_radius + (target_radius - base_radius) * t)
+
     def constellation_node_count(self):
         bullets_level = self.upgrade_level("bullets")
         return int(clamp(4 + bullets_level // 3 + self.ultimate_boss_level(), 4, 20))
@@ -3723,8 +3824,8 @@ class Game:
         if self.player.shockwave_timer < self.player.shockwave_cooldown:
             return False
         self.player.shockwave_timer = 0.0
-        radius = self.player.shockwave_radius
-        damage = self.player.damage * self.player.shockwave_damage + self.wave * 4.0
+        radius = self.shockwave_radius_value()
+        damage = self.shockwave_damage_value()
         self.shockwaves.append(Shockwave(self.player.x, self.player.y, radius))
         for enemy in list(self.enemies):
             dist = distance((enemy.x, enemy.y), (self.player.x, self.player.y))
@@ -3825,20 +3926,20 @@ class Game:
             for enemy in self.enemies:
                 if distance((orb.x, orb.y), (enemy.x, enemy.y)) < orb.size + enemy.radius:
                     if enemy.fire_orb_hit_cd <= 0:
-                        orb_impact_damage = self.player.damage * 0.45
+                        orb_impact_damage = self.fire_orb_impact_damage_value()
                         self.damage_enemy(enemy, orb_impact_damage)
                         enemy.fire_orb_hit_cd = 0.35
                     enemy.burn_timer = max(enemy.burn_timer, 3.0)
-                    orb_burn_dps = 4.0 + enemy.max_hp * 0.05
+                    orb_burn_dps = self.fire_orb_burn_enemy_dps_value(enemy)
                     enemy.burn_dps = max(enemy.burn_dps, orb_burn_dps)
             if self.boss is not None:
                 if distance((orb.x, orb.y), (self.boss.x, self.boss.y)) < orb.size + self.boss.radius:
                     if self.boss.fire_orb_hit_cd <= 0:
-                        orb_impact_damage = self.player.damage * 0.45
+                        orb_impact_damage = self.fire_orb_impact_damage_value()
                         self.damage_boss(orb_impact_damage)
                         self.boss.fire_orb_hit_cd = 0.35
                     self.boss.burn_timer = max(self.boss.burn_timer, 3.0)
-                    orb_burn_dps = 6.0 + self.boss.max_hp * 0.012
+                    orb_burn_dps = self.fire_orb_burn_boss_dps_value()
                     self.boss.burn_dps = max(self.boss.burn_dps, orb_burn_dps)
 
         if self.player.fire_ring:
@@ -3848,12 +3949,12 @@ class Game:
                 dist = distance((enemy.x, enemy.y), (self.player.x, self.player.y))
                 if ring_radius - ring_thickness <= dist <= ring_radius + ring_thickness:
                     enemy.burn_timer = max(enemy.burn_timer, 4.0)
-                    enemy.burn_dps = max(enemy.burn_dps, self.player.fire_ring_burn_dps)
+                    enemy.burn_dps = max(enemy.burn_dps, self.fire_ring_burn_dps_value())
             if self.boss is not None:
                 dist = distance((self.boss.x, self.boss.y), (self.player.x, self.player.y))
                 if ring_radius - ring_thickness <= dist <= ring_radius + ring_thickness:
                     self.boss.burn_timer = max(self.boss.burn_timer, 4.0)
-                    self.boss.burn_dps = max(self.boss.burn_dps, self.player.fire_ring_burn_dps)
+                    self.boss.burn_dps = max(self.boss.burn_dps, self.fire_ring_burn_dps_value())
 
         for pickup in list(self.pickups):
             if distance((pickup.x, pickup.y), (self.player.x, self.player.y)) < pickup.radius + self.player.radius:
@@ -3904,7 +4005,7 @@ class Game:
                 self.player.y,
                 vx * 320,
                 vy * 320,
-                damage=35 + self.player.damage * 0.4,
+                damage=self.rocket_damage_value(),
                 target=target,
                 get_target=self.get_nearest_enemy,
                 explosion_radius=70,
@@ -4004,14 +4105,15 @@ class Game:
                     sx, sy = self.player.laser_orb.x, self.player.laser_orb.y
                     ex, ey = self.player.laser_orb_beam_pos
                     beam_width = 8
+                    laser_orb_damage = self.laser_orb_damage_value()
                     for enemy in list(self.enemies):
                         dist = point_segment_distance(enemy.x, enemy.y, sx, sy, ex, ey)
                         if dist <= enemy.radius + beam_width:
-                            self.damage_enemy(enemy, self.player.laser_orb_damage)
+                            self.damage_enemy(enemy, laser_orb_damage)
                     if self.boss is not None:
                         dist = point_segment_distance(self.boss.x, self.boss.y, sx, sy, ex, ey)
                         if dist <= self.boss.radius + beam_width:
-                            self.damage_boss(self.player.laser_orb_damage)
+                            self.damage_boss(laser_orb_damage)
         if self.player.electroelf_level > 0:
             if self.player.electroelf is None:
                 self.player.electroelf = ElectroElf()
@@ -4033,17 +4135,18 @@ class Game:
                         (elf.x, elf.y),
                         (target.x, target.y),
                         radius=strike_radius,
-                        damage=self.player.electroelf_damage,
+                        damage=self.electroelf_damage_value(),
                         target=target,
                         charge_time=0.45,
                         duration=0.28,
                     )
                     self.lightning_effects.append(strike)
-        if manual_fire:
-            self.player.fire(pygame.mouse.get_pos(), self.projectiles)
-        else:
-            if self.get_nearest_enemy():
-                self.player.fire(target_pos, self.projectiles)
+        if self.base_fire_enabled:
+            if manual_fire:
+                self.player.fire(pygame.mouse.get_pos(), self.projectiles)
+            else:
+                if self.get_nearest_enemy():
+                    self.player.fire(target_pos, self.projectiles)
 
         for enemy in self.enemies:
             enemy.update(dt, (self.player.x, self.player.y), self.projectiles, self.wave)
@@ -4070,7 +4173,7 @@ class Game:
                 self.on_boss_killed()
 
         for pickup in list(self.pickups):
-            pickup.update(dt)
+            pickup.update(dt, (self.player.x, self.player.y))
             if pickup.time_left <= 0:
                 self.pickups.remove(pickup)
 
@@ -4238,7 +4341,7 @@ class Game:
                 touch_damage = self.player_projectile_damage_value() * (
                     4.0 + min(10.0, self.ultimate_boss_level() * 0.9)
                 )
-                hit_radius = blade.beam_width * (0.52 + min(0.26, self.ultimate_boss_level() * 0.015))
+                hit_radius = blade.beam_width * (1.35 + min(0.55, self.ultimate_boss_level() * 0.02)) + 18.0
                 hit_enemies = set()
                 boss_hit = False
                 for (sx, sy), (ex, ey) in blade.segments():
@@ -4510,8 +4613,8 @@ class Game:
         main_bar_w = 230
         draw_bar(bar_x, hp_y, main_bar_w, 14, hp_ratio, (230, 90, 90), back=(30, 36, 46))
         draw_bar(bar_x, fire_y, main_bar_w, 10, fire_ratio, (240, 210, 90), back=(30, 36, 46))
-
-        draw_white_text(f"PV {int(self.player.hp)}", bar_x + 6, hp_y - 4)
+        pv_to_draw = max(0,int(self.player.hp))
+        draw_white_text(f"PV {pv_to_draw}", bar_x + 6, hp_y - 4)
 
         mini_w = 96
         mini_x = left_rect.right - mini_w - 12
@@ -4719,7 +4822,7 @@ class Game:
         for idx, btn in enumerate(self.ui_buttons):
             rect = btn["rect"]
             choice = btn["choice"]
-            hovered = rect.collidepoint(mouse_pos) or idx == self.menu_selected_index
+            hovered = rect.collidepoint(mouse_pos) or (self.gamepad is not None and idx == self.menu_selected_index)
             is_epic = choice.key in epic_keys
             if is_epic:
                 color = (40, 34, 72) if hovered else (28, 24, 56)
@@ -4893,7 +4996,7 @@ class Game:
         for idx, btn in enumerate(self.ui_buttons):
             rect = btn["rect"]
             class_choice = btn["class_choice"]
-            hovered = rect.collidepoint(mouse_pos) or idx == self.menu_selected_index
+            hovered = rect.collidepoint(mouse_pos) or (self.gamepad is not None and idx == self.menu_selected_index)
             color = (24, 38, 60) if hovered else (14, 24, 42)
             border = (120, 215, 255) if hovered else (90, 175, 230)
             card_glow = pygame.Surface((rect.width + 12, rect.height + 12), pygame.SRCALPHA)
@@ -4947,7 +5050,7 @@ class Game:
         for idx, btn in enumerate(self.ui_buttons):
             rect = btn["rect"]
             action = btn["action"]
-            hovered = rect.collidepoint(mouse_pos) or idx == self.menu_selected_index
+            hovered = rect.collidepoint(mouse_pos) or (self.gamepad is not None and idx == self.menu_selected_index)
             color = (22, 36, 56) if hovered else (14, 24, 40)
             pygame.draw.rect(self.screen, color, rect, border_radius=10)
             pygame.draw.rect(self.screen, (95, 195, 245), rect, 2, border_radius=10)
@@ -4979,7 +5082,7 @@ class Game:
         for idx, btn in enumerate(self.ui_buttons):
             rect = btn["rect"]
             action = btn["action"]
-            hovered = rect.collidepoint(mouse_pos) or idx == self.menu_selected_index
+            hovered = rect.collidepoint(mouse_pos) or (self.gamepad is not None and idx == self.menu_selected_index)
             color = (22, 36, 56) if hovered else (14, 24, 40)
             pygame.draw.rect(self.screen, color, rect, border_radius=10)
             pygame.draw.rect(self.screen, (95, 195, 245), rect, 2, border_radius=10)
@@ -5082,7 +5185,9 @@ class Game:
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_e:
                     if self.state == "playing":
                         self.try_activate_shockwave()
-                if event.type == pygame.JOYBUTTONDOWN:
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_p:
+                    self.base_fire_enabled = not self.base_fire_enabled
+                if event.type == pygame.JOYBUTTONDOWN and self.gamepad is not None:
                     if event.button in self.pad_btn_pause:
                         self.toggle_pause()
                     if self.state == "playing":
@@ -5147,7 +5252,11 @@ class Game:
                                 self.cheat_buttons = []
                                 break
 
-            self.update_menu_navigation(dt, self.get_gamepad_input())
+            if self.gamepad is not None:
+                self.update_menu_navigation(dt, self.get_gamepad_input())
+            else:
+                self.menu_nav_hold = (0, 0)
+                self.menu_nav_repeat_timer = 0.0
             if self.state in ("playing", "wave_clear", "boss_death"):
                 self.update(dt)
 
