@@ -447,7 +447,16 @@ class Enemy:
         self.hp = self.max_hp
         self.burn_timer = 0.0
         self.burn_dps = 0.0
+        self.burn_source = "fire_orb_burn"
         self.fire_orb_hit_cd = 0.0
+        self.ally_hit_cd = 0.0
+        self.is_ally = False
+        self.ally_time = 0.0
+        self.ally_source = "bio_minions"
+        self.ally_power = 1.0
+        self.base_neon_primary = self.neon_primary
+        self.base_neon_secondary = self.neon_secondary
+        self.base_neon_core = self.neon_core
 
     @staticmethod
     def _mix_color(color_a, color_b, t):
@@ -581,9 +590,34 @@ class Enemy:
         rect = surf.get_rect(center=(int(self.x), int(self.y)))
         screen.blit(surf, rect.topleft)
     
-    def update(self, dt, player_pos, projectiles, wave):
-        dx = player_pos[0] - self.x
-        dy = player_pos[1] - self.y
+    def set_ally(self, duration, source="bio_minions", power=1.0):
+        self.is_ally = True
+        self.ally_time = max(self.ally_time, duration)
+        self.ally_source = source
+        self.ally_power = max(self.ally_power, power)
+        self.neon_primary = (110, 220, 255)
+        self.neon_secondary = (195, 242, 255)
+        self.neon_core = (255, 255, 255)
+        self.beam_charge = 0.0
+        self.beam_active = 0.0
+        self.beam_timer = min(self.beam_timer, 0.5) if self.kind == "tank" else self.beam_timer
+        self.shoot_cooldown = min(self.shoot_cooldown, 0.2) if self.kind == "shooter" else self.shoot_cooldown
+
+    def clear_ally_state(self):
+        self.is_ally = False
+        self.ally_time = 0.0
+        self.ally_source = "bio_minions"
+        self.ally_power = 1.0
+        self.neon_primary = self.base_neon_primary
+        self.neon_secondary = self.base_neon_secondary
+        self.neon_core = self.base_neon_core
+
+    def update(self, dt, player_pos, projectiles, wave, ally_target_pos=None):
+        target_pos = player_pos
+        if self.is_ally and ally_target_pos is not None:
+            target_pos = ally_target_pos
+        dx = target_pos[0] - self.x
+        dy = target_pos[1] - self.y
         dist = math.hypot(dx, dy) or 1
         vx = dx / dist * self.speed
         vy = dy / dist * self.speed
@@ -596,6 +630,11 @@ class Enemy:
             self.burn_timer -= dt
             self.hp -= self.burn_dps * dt
         self.fire_orb_hit_cd = max(0.0, self.fire_orb_hit_cd - dt)
+        self.ally_hit_cd = max(0.0, self.ally_hit_cd - dt)
+        if self.is_ally:
+            self.ally_time = max(0.0, self.ally_time - dt)
+            if self.ally_time <= 0:
+                self.clear_ally_state()
 
         if self.kind == "tank":
             if self.beam_active > 0:
@@ -617,15 +656,22 @@ class Enemy:
                 self.shoot_cooldown = max(0.4, 1.8 - wave * 0.05) + random.random() * 0.5
                 angle = math.atan2(dy, dx)
                 sx, sy = vec_from_angle(angle)
+                owner = "enemy"
+                proj_damage = 14 + wave * 0.7
+                proj_color = RED
+                if self.is_ally:
+                    owner = f"ally:{self.ally_source}"
+                    proj_damage *= self.ally_power
+                    proj_color = (120, 220, 255)
                 proj = Projectile(
                     self.x,
                     self.y,
                     sx * (220 + wave * 6),
                     sy * (220 + wave * 6),
-                    damage=14 + wave * 0.7,
-                    color=RED,
+                    damage=proj_damage,
+                    color=proj_color,
                     radius=4,
-                    owner="enemy",
+                    owner=owner,
                 )
                 projectiles.append(proj)
 
@@ -635,7 +681,10 @@ class Enemy:
             if self.beam_charge > 0:
                 self._draw_beam(screen, (165, 255, 195), 5)
             if self.beam_active > 0:
-                self._draw_beam(screen, (100, 255, 140), 7)
+                if self.is_ally:
+                    self._draw_beam(screen, (120, 220, 255), 7)
+                else:
+                    self._draw_beam(screen, (100, 255, 140), 7)
         if self.burn_timer > 0:
             burn_color = self._mix_color((255, 120, 60), self.neon_secondary, 0.35)
             pygame.draw.circle(screen, burn_color, (int(self.x), int(self.y)), self.radius + 4, 2)
@@ -668,6 +717,19 @@ class Enemy:
             return False
         perp = abs(dx * dir_y - dy * dir_x)
         return perp <= self.beam_width
+
+    def beam_hits_entity(self, target_pos, radius):
+        if self.beam_active <= 0:
+            return False
+        dx = target_pos[0] - self.x
+        dy = target_pos[1] - self.y
+        dir_x = math.cos(self.beam_angle)
+        dir_y = math.sin(self.beam_angle)
+        proj = dx * dir_x + dy * dir_y
+        if proj < 0 or proj > self.beam_length:
+            return False
+        perp = abs(dx * dir_y - dy * dir_x)
+        return perp <= self.beam_width + radius
 
 
 class BossZone:
@@ -737,6 +799,7 @@ class Boss:
         self.zone_timer = 0.0
         self.burn_timer = 0.0
         self.burn_dps = 0.0
+        self.burn_source = "fire_orb_burn"
         self.fire_orb_hit_cd = 0.0
         self.neon_phase = random.uniform(0.0, math.tau)
 
@@ -744,7 +807,7 @@ class Boss:
         ratio = max(0.0, min(1.0, self.hp / self.max_hp))
         return int((1.0 - ratio) * 4)
 
-    def update(self, dt, player_pos, projectiles, zones, wave, damage_value):
+    def update(self, dt, player_pos, projectiles, zones, wave, projectile_damage, zone_damage):
         if self.burn_timer > 0:
             self.burn_timer -= dt
             self.hp -= self.burn_dps * dt
@@ -791,7 +854,7 @@ class Boss:
                     self.y,
                     vx * (200 + 25 * phase),
                     vy * (200 + 25 * phase),
-                    damage=damage_value,
+                    damage=projectile_damage,
                     color=(185, 110, 255),
                     radius=10,
                     owner="enemy",
@@ -809,7 +872,7 @@ class Boss:
                 zx = player_pos[0] + random.uniform(-40, 40)
                 zy = player_pos[1] + random.uniform(-40, 40)
                 radius = 70 + phase * 12
-                zones.append(BossZone(zx, zy, radius, damage_value))
+                zones.append(BossZone(zx, zy, radius, zone_damage))
             if self.zone_burst >= total:
                 self.state = "idle"
 
@@ -1026,8 +1089,8 @@ class Player:
         self.fire_ring_outer_offset = 24.0
         self.laser_orb: Optional["LaserOrb"] = None
         self.laser_orb_level = 0
-        self.laser_orb_damage = 14
-        self.laser_orb_cooldown = 3.0
+        self.laser_orb_damage = 10
+        self.laser_orb_cooldown = 3.4
         self.laser_orb_timer = 0.0
         self.laser_orb_beam_timer = 0.0
         self.laser_orb_beam_tick = 0.0
@@ -1041,6 +1104,7 @@ class Player:
         self.electroelf_timer = 0.0
         self.ultimate_charge = 0
         self.ultimate_max = 20
+        self.ultimate_regen_time = 60.0
         self.ultimate_beam_time = 0.0
         self.ultimate_cooldown = 0.0
         self.ultimate_cooldown_max = 10.0
@@ -2897,6 +2961,66 @@ EPIC_UPGRADES = [
     ),
 ]
 
+DAMAGE_SOURCE_ORDER = [
+    "base_shot",
+    "fire_orb_impact",
+    "fire_orb_burn",
+    "fire_ring_burn",
+    "laser_orb",
+    "electroelf",
+    "rockets",
+    "shockwave",
+    "bio_minions",
+    "ultimate_constellation",
+    "ultimate_prismatic_blade",
+    "ultimate_vector_overdrive",
+    "ultimate_spectral_swarm",
+    "ultimate_fractal_prism",
+    "ultimate_singularity",
+    "ultimate_zone",
+    "other",
+]
+
+DAMAGE_SOURCE_META = {
+    "base_shot": {"label": "Tir principal", "upgrade_key": "damage"},
+    "fire_orb_impact": {"label": "Orbe de feu (impact)", "upgrade_key": "fire_orb"},
+    "fire_orb_burn": {"label": "Orbe de feu (brulure)", "upgrade_key": "fire_orb"},
+    "fire_ring_burn": {"label": "Cercle de feu (brulure)", "upgrade_key": "fire_ring"},
+    "laser_orb": {"label": "Orbe laser", "upgrade_key": "laser_orb"},
+    "electroelf": {"label": "Electroelf", "upgrade_key": "electroelf"},
+    "rockets": {"label": "Lance roquette", "upgrade_key": "rockets"},
+    "shockwave": {"label": "Onde de choc", "upgrade_key": None},
+    "bio_minions": {"label": "Invocations chimiques", "upgrade_key": None},
+    "ultimate_constellation": {"label": "Ulti: Constellation Laser", "upgrade_key": None},
+    "ultimate_prismatic_blade": {"label": "Ulti: Lame Prismatique", "upgrade_key": None},
+    "ultimate_vector_overdrive": {"label": "Ulti: Transmutation Hostile", "upgrade_key": None},
+    "ultimate_spectral_swarm": {"label": "Ulti: Essaim Spectral", "upgrade_key": None},
+    "ultimate_fractal_prism": {"label": "Ulti: Prisme Fractal", "upgrade_key": None},
+    "ultimate_singularity": {"label": "Ulti: Singularite Neon", "upgrade_key": None},
+    "ultimate_zone": {"label": "Zone ultime", "upgrade_key": None},
+    "other": {"label": "Autres sources", "upgrade_key": None},
+}
+
+PLAYER_DAMAGE_SOURCE_ORDER = [
+    "enemy_projectile",
+    "enemy_contact",
+    "tank_beam",
+    "boss_contact",
+    "boss_laser",
+    "boss_zone",
+    "other",
+]
+
+PLAYER_DAMAGE_SOURCE_META = {
+    "enemy_projectile": {"label": "Projectile ennemi"},
+    "enemy_contact": {"label": "Contact ennemi"},
+    "tank_beam": {"label": "Laser tank"},
+    "boss_contact": {"label": "Contact boss"},
+    "boss_laser": {"label": "Laser boss"},
+    "boss_zone": {"label": "Zone boss"},
+    "other": {"label": "Autres sources"},
+}
+
 TEMP_PICKUP_POOL = ["shield", "haste", "multishot", "heal"]
 
 CLASS_POOL = [
@@ -2918,8 +3042,8 @@ CLASS_POOL = [
         "mad_biochemist",
         "Biochimiste fou",
         "vector_overdrive",
-        "Surcharge Vectorielle",
-        "Mode surcharge offensive temporaire.",
+        "Transmutation Hostile",
+        "Retourne les ennemis proches contre leurs allies.",
     ),
     ClassChoice(
         "shard_master",
@@ -3004,6 +3128,8 @@ class Game:
         self.wave_spawn_remaining = 0
         self.wave_spawn_interval = 0.0
         self.wave_spawn_timer = 0.0
+        self.boss_spawn_interval = 1.0
+        self.boss_spawn_timer = 0.0
         self.gem_rush_timer = 0.0
         self.boss_death_timer = 0.0
         self.gamepad = None
@@ -3369,6 +3495,245 @@ class Game:
             return True
         return False
 
+    def reset_damage_stats(self):
+        self.damage_total = 0.0
+        self.damage_source_totals = {}
+        self.player_damage_total = 0.0
+        self.player_damage_source_totals = {}
+        self.combat_time = 0.0
+
+    def normalize_damage_source(self, source):
+        if source in DAMAGE_SOURCE_META:
+            return source
+        return "other"
+
+    def normalize_player_damage_source(self, source):
+        if source in PLAYER_DAMAGE_SOURCE_META:
+            return source
+        return "other"
+
+    def record_damage_stat(self, source, amount):
+        if amount <= 0:
+            return
+        key = self.normalize_damage_source(source)
+        self.damage_total += amount
+        self.damage_source_totals[key] = self.damage_source_totals.get(key, 0.0) + amount
+
+    def record_player_damage_stat(self, source, amount):
+        if amount <= 0:
+            return
+        key = self.normalize_player_damage_source(source)
+        self.player_damage_total += amount
+        self.player_damage_source_totals[key] = self.player_damage_source_totals.get(key, 0.0) + amount
+
+    def upgrade_label_from_key(self, key):
+        for choice in list(UPGRADE_POOL) + EPIC_UPGRADES:
+            if choice.key == key:
+                return choice.label
+        return key
+
+    def damage_source_label(self, source):
+        info = DAMAGE_SOURCE_META.get(source)
+        if info is None:
+            return DAMAGE_SOURCE_META["other"]["label"]
+        return info["label"]
+
+    def damage_source_upgrade_note(self, source):
+        info = DAMAGE_SOURCE_META.get(source)
+        if info is None:
+            return "Upgrade: inconnu"
+        if source == "bio_minions":
+            return "Classe: competence E"
+        upgrade_key = info.get("upgrade_key")
+        if upgrade_key is None:
+            return "Classe: ultime"
+        level = self.upgrade_level(upgrade_key)
+        max_level = self.upgrade_max_level(upgrade_key)
+        label = self.upgrade_label_from_key(upgrade_key)
+        if max_level is None:
+            return f"Upgrade: {label} niv {level}"
+        return f"Upgrade: {label} {level}/{max_level}"
+
+    def player_damage_source_label(self, source):
+        info = PLAYER_DAMAGE_SOURCE_META.get(source)
+        if info is None:
+            return PLAYER_DAMAGE_SOURCE_META["other"]["label"]
+        return info["label"]
+
+    @staticmethod
+    def format_time_short(seconds):
+        total = max(0, int(seconds))
+        minutes = total // 60
+        secs = total % 60
+        return f"{minutes:02d}:{secs:02d}"
+
+    @staticmethod
+    def build_star_bar(value, thresholds):
+        filled = 0
+        for threshold in thresholds:
+            if value >= threshold:
+                filled += 1
+        return int(clamp(filled, 0, 5))
+
+    @staticmethod
+    def star_points(center, outer_radius, inner_radius, branches=5, angle_offset=-math.pi / 2):
+        cx, cy = center
+        points = []
+        total = branches * 2
+        for i in range(total):
+            radius = outer_radius if i % 2 == 0 else inner_radius
+            angle = angle_offset + i * (math.tau / total)
+            points.append((cx + math.cos(angle) * radius, cy + math.sin(angle) * radius))
+        return points
+
+    def draw_stat_rating(self, x, y, filled, total=5):
+        badge_w = 124
+        badge_h = 18
+        badge = pygame.Surface((badge_w, badge_h), pygame.SRCALPHA)
+        pygame.draw.rect(badge, (16, 30, 46, 210), badge.get_rect(), border_radius=9)
+        pygame.draw.rect(badge, (85, 165, 220, 150), badge.get_rect(), 1, border_radius=9)
+        glow_w = int((badge_w - 8) * (filled / max(1, total)))
+        if glow_w > 0:
+            glow = pygame.Surface((glow_w, badge_h - 6), pygame.SRCALPHA)
+            pygame.draw.rect(glow, (120, 215, 255, 42), glow.get_rect(), border_radius=7)
+            badge.blit(glow, (4, 3))
+
+        slot_step = 24
+        for i in range(total):
+            center = (14 + i * slot_step, badge_h // 2)
+            points = self.star_points(center, 7, 3.4)
+            is_filled = i < filled
+            if is_filled:
+                pygame.draw.circle(badge, (255, 220, 140, 34), center, 10)
+                pygame.draw.circle(badge, (255, 245, 210, 18), center, 7)
+                pygame.draw.polygon(badge, (255, 232, 150), points)
+                pygame.draw.polygon(badge, (255, 250, 225), points, 1)
+            else:
+                pygame.draw.polygon(badge, (68, 88, 108), points)
+                pygame.draw.polygon(badge, (120, 144, 168), points, 1)
+
+        self.screen.blit(badge, (x, y))
+
+    def build_damage_stats_lines(self):
+        total_damage = self.damage_total
+        dps = total_damage / max(1.0, self.combat_time)
+        level_progress = max(0, self.wave - 1)
+        summary_lines = [
+            ("Degats totaux", f"{int(total_damage)}", self.build_star_bar(total_damage, [1200, 6500, 22000, 58000, 130000])),
+            ("DPS moyen", f"{dps:.1f}", self.build_star_bar(dps, [30, 90, 180, 320, 520])),
+            ("Temps de combat", self.format_time_short(self.combat_time), self.build_star_bar(self.combat_time, [45, 120, 240, 420, 660])),
+            ("Progression vagues", f"{level_progress}", self.build_star_bar(level_progress, [2, 5, 9, 14, 20])),
+        ]
+
+        detail_lines = []
+        entries = []
+        for key in DAMAGE_SOURCE_ORDER:
+            value = self.damage_source_totals.get(key, 0.0)
+            if value > 0:
+                entries.append((key, value))
+        entries.sort(key=lambda item: item[1], reverse=True)
+        for source, value in entries:
+            ratio = (value / total_damage * 100.0) if total_damage > 0 else 0.0
+            label = self.damage_source_label(source)
+            note = self.damage_source_upgrade_note(source)
+            detail_lines.append((f"{label}: {int(value)} ({ratio:.1f}%) - {note}", ratio))
+        if not detail_lines:
+            detail_lines.append(("Aucun degat inflige pour le moment.", 0.0))
+        return summary_lines, detail_lines
+
+    def build_player_damage_stats_lines(self):
+        total_damage = self.player_damage_total
+        summary_lines = [
+            ("Degats recus", f"{int(total_damage)}", self.build_star_bar(total_damage, [40, 90, 160, 260, 380])),
+        ]
+
+        detail_lines = []
+        entries = []
+        for key in PLAYER_DAMAGE_SOURCE_ORDER:
+            value = self.player_damage_source_totals.get(key, 0.0)
+            if value > 0:
+                entries.append((key, value))
+        entries.sort(key=lambda item: item[1], reverse=True)
+        for source, value in entries:
+            ratio = (value / total_damage * 100.0) if total_damage > 0 else 0.0
+            detail_lines.append((f"{self.player_damage_source_label(source)}: {int(value)} ({ratio:.1f}%)", ratio))
+        if not detail_lines:
+            detail_lines.append(("Aucun degat recu pour le moment.", 0.0))
+        return summary_lines, detail_lines
+
+    def get_damage_stats_rect(self, anchor_rect, title, top_margin=0, bottom_margin=0, side="right", player_stats=False):
+        if player_stats:
+            summary_lines, detail_lines = self.build_player_damage_stats_lines()
+        else:
+            summary_lines, detail_lines = self.build_damage_stats_lines()
+        all_widths = [self.big_font.size(title)[0]]
+        if player_stats:
+            all_widths.extend(self.font.size(f"{label}: {value}")[0] for label, value, _ in summary_lines)
+        else:
+            all_widths.extend(self.font.size(f"{label}: {value}")[0] + 150 for label, value, _ in summary_lines)
+        all_widths.extend(self.font.size(text)[0] for text, _ in detail_lines)
+
+        content_w = max(all_widths) if all_widths else 280
+        panel_w = int(clamp(content_w + 40, 320, min(760, WIDTH - 40)))
+
+        base_h = 56 + len(summary_lines) * 24 + 20
+        detail_h = len(detail_lines) * 24 + 24
+        panel_h = base_h + detail_h
+        panel_h = max(220, int(panel_h))
+
+        if side == "left":
+            x = anchor_rect.x - panel_w - 24
+            if x < 20:
+                panel_w = max(280, anchor_rect.x - 44)
+                x = max(20, anchor_rect.x - panel_w - 24)
+        else:
+            x = anchor_rect.right + 24
+            if x + panel_w > WIDTH - 20:
+                panel_w = max(280, WIDTH - x - 20)
+            if x + panel_w > WIDTH - 20:
+                x = max(20, WIDTH - panel_w - 20)
+
+        y = max(top_margin, anchor_rect.y)
+        if y + panel_h > HEIGHT - bottom_margin:
+            y = max(top_margin, HEIGHT - bottom_margin - panel_h)
+
+        return pygame.Rect(int(x), int(y), int(panel_w), int(panel_h))
+
+    def draw_damage_stats_panel(self, rect, title, player_stats=False):
+        panel = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(panel, (8, 16, 28, 238), panel.get_rect(), border_radius=14)
+        pygame.draw.rect(panel, (95, 190, 245, 220), panel.get_rect(), 2, border_radius=14)
+        pygame.draw.rect(panel, (170, 238, 255, 140), panel.get_rect().inflate(-10, -10), 1, border_radius=12)
+        self.screen.blit(panel, rect.topleft)
+
+        title_surf = self.big_font.render(title, True, (225, 245, 255))
+        self.screen.blit(title_surf, (rect.x + 18, rect.y + 14))
+
+        if player_stats:
+            summary_lines, detail_lines = self.build_player_damage_stats_lines()
+        else:
+            summary_lines, detail_lines = self.build_damage_stats_lines()
+
+        summary_y = rect.y + 56
+        for label, value, stars in summary_lines:
+            line = self.font.render(f"{label}: {value}", True, (200, 228, 248))
+            self.screen.blit(line, (rect.x + 20, summary_y))
+            if not player_stats:
+                self.draw_stat_rating(rect.right - 164, summary_y + 1, stars)
+            summary_y += 28
+
+        line_y = summary_y + 4
+        separator = pygame.Surface((rect.width - 40, 2), pygame.SRCALPHA)
+        separator.fill((95, 190, 245, 120))
+        self.screen.blit(separator, (rect.x + 20, line_y))
+
+        start_y = line_y + 16
+        for row, ratio in detail_lines:
+            color = (220, 242, 255) if ratio >= 10 else (185, 215, 238)
+            text_surf = self.font.render(row, True, color)
+            self.screen.blit(text_surf, (rect.x + 20, start_y))
+            start_y += 24
+
     def reset_game(self):
         self.player = Player()
         self.enemies.clear()
@@ -3403,12 +3768,14 @@ class Game:
         self.wave_spawn_remaining = 0
         self.wave_spawn_interval = 0.0
         self.wave_spawn_timer = 0.0
+        self.boss_spawn_timer = 0.0
         self.gem_rush_timer = 0.0
         self.boss_death_timer = 0.0
         self.selected_class = None
         self.selected_ultimate_key = "singularity"
         self.ultimate_boss_boost = 0
         self.base_fire_enabled = True
+        self.reset_damage_stats()
         self.spawn_wave(self.wave)
         self.prepare_class_choices()
         self.state = "class_select"
@@ -3514,6 +3881,7 @@ class Game:
         self.enemies.clear()
         self.boss = None
         self.boss_zones.clear()
+        self.boss_spawn_timer = 0.0
         total = 18 + int(wave * 3.0)
         self.wave_total = total
         self.wave_killed = 0
@@ -3530,6 +3898,7 @@ class Game:
             self.wave_spawn_timer = 0.0
         if wave % 5 == 0:
             self.boss = Boss(wave)
+            self.boss_spawn_timer = self.boss_spawn_interval
 
     def drop_pickup(self, x, y):
         if random.random() < 0.12:
@@ -3569,7 +3938,7 @@ class Game:
                 self.player.laser_orb = LaserOrb()
             self.player.laser_orb_level += 1
             self.player.laser_orb_damage += 4
-            self.player.laser_orb_cooldown = max(0.8, self.player.laser_orb_cooldown - 0.06)
+            self.player.laser_orb_cooldown = max(1.0, self.player.laser_orb_cooldown - 0.05)
         elif key == "electroelf":
             if self.player.electroelf is None:
                 self.player.electroelf = ElectroElf()
@@ -3741,6 +4110,7 @@ class Game:
         self.wave_spawn_remaining = 0
         self.wave_spawn_interval = 0.0
         self.wave_spawn_timer = 0.0
+        self.boss_spawn_timer = 0.0
         self.boss_zones.clear()
         for enemy in list(self.enemies):
             self.explosions.append(Explosion(enemy.x, enemy.y, 40, duration=0.3))
@@ -3753,11 +4123,17 @@ class Game:
         self.boss_death_timer = 0.8
         self.state = "boss_death"
 
-    def boss_attack_damage(self):
-        return (24 + self.wave * 2.4) * 5
+    def boss_projectile_damage(self):
+        return 14 + self.wave * 1.6
+
+    def boss_zone_damage(self):
+        return 18 + self.wave * 1.8
+
+    def boss_laser_damage(self):
+        return 24 + self.wave * 2.0
 
     def boss_contact_damage(self):
-        return self.boss_attack_damage() * 0.45
+        return 14 + self.wave * 1.4
 
     def get_damage_font(self, size):
         size = int(clamp(size, 16, 72))
@@ -3794,8 +4170,13 @@ class Game:
             )
         )
 
-    def damage_player(self, amount):
+    def damage_player(self, amount, source="other"):
+        hp_before = self.player.hp
+        shield_before = self.player.shield
         result = self.player.take_damage(amount)
+        hp_loss = max(0.0, hp_before - self.player.hp)
+        shield_loss = max(0.0, shield_before - self.player.shield)
+        self.record_player_damage_stat(source, hp_loss + shield_loss)
         if result == "shield":
             self.spawn_pulse(
                 self.player.x,
@@ -3820,20 +4201,24 @@ class Game:
             )
         return result
 
-    def damage_enemy(self, enemy, amount):
+    def damage_enemy(self, enemy, amount, source="other"):
         if enemy not in self.enemies or amount <= 0 or enemy.hp <= 0:
             return
+        dealt = min(amount, enemy.hp)
         enemy.hp -= amount
+        self.record_damage_stat(source, dealt)
         self.spawn_damage_number(enemy.x, enemy.y, amount)
         self.spawn_pulse(enemy.x, enemy.y, color=(255, 150, 95), start_radius=8, end_radius=24, duration=0.11, width=2, fill_alpha=24)
         if enemy.hp <= 0 and enemy in self.enemies:
             self.enemies.remove(enemy)
             self.on_enemy_killed(enemy)
 
-    def damage_boss(self, amount):
+    def damage_boss(self, amount, source="other"):
         if self.boss is None or amount <= 0 or self.boss.hp <= 0:
             return
+        dealt = min(amount, self.boss.hp)
         self.boss.hp -= amount
+        self.record_damage_stat(source, dealt)
         self.spawn_damage_number(self.boss.x, self.boss.y, amount, color=(255, 175, 90))
         if self.boss.hp <= 0:
             self.on_boss_killed()
@@ -3936,6 +4321,25 @@ class Game:
     def vector_overdrive_range(self):
         return min(760.0, 430.0 + self.ultimate_boss_level() * 20.0)
 
+    def biochemist_transmute_radius(self):
+        return min(420.0, 220.0 + self.ultimate_boss_level() * 16.0)
+
+    def biochemist_transmute_duration(self):
+        return 2.0
+
+    def biochemist_ally_power(self):
+        return min(2.6, 1.0 + self.ultimate_boss_level() * 0.12)
+
+    def biochemist_summon_duration(self):
+        return 8.0 + min(4.0, self.ultimate_boss_level() * 0.3)
+
+    def biochemist_summon_count(self):
+        return 5
+
+    def biochemist_contact_damage(self, enemy):
+        base = 10.0 + enemy.max_hp * 0.07 + self.wave * 0.7
+        return base * self.biochemist_ally_power()
+
     def spectral_swarm_duration(self):
         return 8.0 + min(4.0, self.ultimate_boss_level() * 0.35)
 
@@ -4027,7 +4431,7 @@ class Game:
         self.player.ultimate_beam_time = self.constellation_duration()
         self.player.ultimate_cooldown = 0.0
         self._clear_ultimate_effects()
-        preferred_points = [(enemy.x, enemy.y) for enemy in self.enemies if enemy.hp > 0]
+        preferred_points = [(enemy.x, enemy.y) for enemy in self.enemies if enemy.hp > 0 and not enemy.is_ally]
         if self.boss is not None and self.boss.hp > 0:
             preferred_points.append((self.boss.x, self.boss.y))
         constellation = UltimateConstellation(
@@ -4066,19 +4470,36 @@ class Game:
 
     def _activate_vector_overdrive_ultimate(self):
         self.player.ultimate_charge = 0
-        self.player.ultimate_beam_time = self.vector_overdrive_duration()
+        self.player.ultimate_beam_time = self.biochemist_transmute_duration()
         self.player.ultimate_cooldown = 0.0
         self._clear_ultimate_effects()
-        self.player.vector_overdrive_time = self.player.ultimate_beam_time
-        overdrive = UltimateVectorOverdrive(
-            self.player.x,
-            self.player.y,
-            duration=self.player.ultimate_beam_time,
-            tick_interval=self.vector_overdrive_tick_interval(),
-            max_targets=self.vector_overdrive_max_targets(),
-        )
-        self.ultimate_vector_overdrives.append(overdrive)
+        radius = self.biochemist_transmute_radius()
+        converted = 0
+        for enemy in self.enemies:
+            if enemy.hp <= 0 or enemy.is_ally:
+                continue
+            if distance((enemy.x, enemy.y), (self.player.x, self.player.y)) <= radius:
+                enemy.set_ally(
+                    self.biochemist_transmute_duration(),
+                    source="ultimate_vector_overdrive",
+                    power=self.biochemist_ally_power(),
+                )
+                converted += 1
         self.ultimate_pulses.append(UltimatePulse(self.player.x, self.player.y, 145, duration=0.28))
+        self.pulse_effects.append(
+            PulseEffect(
+                self.player.x,
+                self.player.y,
+                color=(120, 220, 255),
+                start_radius=32,
+                end_radius=int(radius),
+                duration=0.32,
+                width=6,
+                fill_alpha=44,
+            )
+        )
+        if converted <= 0:
+            self.player.ultimate_charge = int(min(self.player.ultimate_max * 0.35, self.player.ultimate_max))
 
     def _activate_spectral_swarm_ultimate(self):
         self.player.ultimate_charge = 0
@@ -4157,6 +4578,22 @@ class Game:
         if self.player.shockwave_timer < self.player.shockwave_cooldown:
             return False
         self.player.shockwave_timer = 0.0
+        if self.active_ultimate_key() == "vector_overdrive":
+            for _ in range(self.biochemist_summon_count()):
+                self.spawn_biochemist_ally(source="bio_minions")
+            self.pulse_effects.append(
+                PulseEffect(
+                    self.player.x,
+                    self.player.y,
+                    color=(120, 220, 255),
+                    start_radius=22,
+                    end_radius=120,
+                    duration=0.22,
+                    width=5,
+                    fill_alpha=36,
+                )
+            )
+            return True
         radius = self.shockwave_radius_value()
         damage = self.shockwave_damage_value()
         self.shockwaves.append(Shockwave(self.player.x, self.player.y, radius))
@@ -4197,76 +4634,131 @@ class Game:
             )
         )
         for enemy in list(self.enemies):
+            if enemy.is_ally:
+                continue
             dist = distance((enemy.x, enemy.y), (self.player.x, self.player.y))
             if dist <= radius:
-                self.damage_enemy(enemy, damage)
+                self.damage_enemy(enemy, damage, source="shockwave")
         if self.boss is not None:
             dist = distance((self.boss.x, self.boss.y), (self.player.x, self.player.y))
             if dist <= radius:
-                self.damage_boss(damage)
+                self.damage_boss(damage, source="shockwave")
         return True
 
     def handle_collisions(self):
         for proj in list(self.projectiles):
-            if proj.owner == "player":
+            if proj.owner.startswith("player"):
                 for enemy in list(self.enemies):
+                    if enemy.is_ally:
+                        continue
                     if distance((proj.x, proj.y), (enemy.x, enemy.y)) < proj.radius + enemy.radius:
-                        self.damage_enemy(enemy, proj.damage)
+                        source = "base_shot"
+                        if proj.owner.startswith("player:"):
+                            source = proj.owner.split(":", 1)[1]
+                        self.damage_enemy(enemy, proj.damage, source=source)
                         if proj in self.projectiles:
                             self.projectiles.remove(proj)
                         break
                 if proj in self.projectiles and self.boss is not None:
                     if distance((proj.x, proj.y), (self.boss.x, self.boss.y)) < proj.radius + self.boss.radius:
-                        self.damage_boss(proj.damage)
+                        source = "base_shot"
+                        if proj.owner.startswith("player:"):
+                            source = proj.owner.split(":", 1)[1]
+                        self.damage_boss(proj.damage, source=source)
+                        self.projectiles.remove(proj)
+            elif proj.owner.startswith("ally:"):
+                ally_source = proj.owner.split(":", 1)[1]
+                for enemy in list(self.enemies):
+                    if enemy.is_ally:
+                        continue
+                    if distance((proj.x, proj.y), (enemy.x, enemy.y)) < proj.radius + enemy.radius:
+                        self.damage_enemy(enemy, proj.damage, source=ally_source)
+                        if proj in self.projectiles:
+                            self.projectiles.remove(proj)
+                        break
+                if proj in self.projectiles and self.boss is not None:
+                    if distance((proj.x, proj.y), (self.boss.x, self.boss.y)) < proj.radius + self.boss.radius:
+                        self.damage_boss(proj.damage, source=ally_source)
                         self.projectiles.remove(proj)
             else:
                 if distance((proj.x, proj.y), (self.player.x, self.player.y)) < proj.radius + self.player.radius:
-                    self.damage_player(max(8, proj.damage))
+                    self.damage_player(max(8, proj.damage), source="enemy_projectile")
                     if proj in self.projectiles:
                         self.projectiles.remove(proj)
 
         for enemy in self.enemies:
+            if enemy.is_ally:
+                continue
             if distance((enemy.x, enemy.y), (self.player.x, self.player.y)) < enemy.radius + self.player.radius:
                 contact_damage = max(7, int(self.player.max_hp * 0.075))
-                self.damage_player(contact_damage)
+                self.damage_player(contact_damage, source="enemy_contact")
 
         if self.boss is not None:
             if distance((self.boss.x, self.boss.y), (self.player.x, self.player.y)) < self.boss.radius + self.player.radius:
-                self.damage_player(self.boss_contact_damage())
+                self.damage_player(self.boss_contact_damage(), source="boss_contact")
+
+        for ally in self.enemies:
+            if not ally.is_ally or ally.ally_hit_cd > 0:
+                continue
+            for enemy in self.enemies:
+                if enemy is ally or enemy.is_ally:
+                    continue
+                if distance((ally.x, ally.y), (enemy.x, enemy.y)) < ally.radius + enemy.radius:
+                    self.damage_enemy(enemy, self.biochemist_contact_damage(ally), source=ally.ally_source)
+                    ally.ally_hit_cd = 0.45
+                    break
+            if ally.ally_hit_cd <= 0 and self.boss is not None:
+                if distance((ally.x, ally.y), (self.boss.x, self.boss.y)) < ally.radius + self.boss.radius:
+                    self.damage_boss(self.biochemist_contact_damage(ally) * 0.8, source=ally.ally_source)
+                    ally.ally_hit_cd = 0.45
 
         for orb in self.player.fire_orbiters:
             for enemy in self.enemies:
+                if enemy.is_ally:
+                    continue
                 if distance((orb.x, orb.y), (enemy.x, enemy.y)) < orb.size + enemy.radius:
                     if enemy.fire_orb_hit_cd <= 0:
                         orb_impact_damage = self.fire_orb_impact_damage_value()
-                        self.damage_enemy(enemy, orb_impact_damage)
+                        self.damage_enemy(enemy, orb_impact_damage, source="fire_orb_impact")
                         enemy.fire_orb_hit_cd = 0.35
                     enemy.burn_timer = max(enemy.burn_timer, 3.0)
                     orb_burn_dps = self.fire_orb_burn_enemy_dps_value(enemy)
+                    if orb_burn_dps >= enemy.burn_dps:
+                        enemy.burn_source = "fire_orb_burn"
                     enemy.burn_dps = max(enemy.burn_dps, orb_burn_dps)
             if self.boss is not None:
                 if distance((orb.x, orb.y), (self.boss.x, self.boss.y)) < orb.size + self.boss.radius:
                     if self.boss.fire_orb_hit_cd <= 0:
                         orb_impact_damage = self.fire_orb_impact_damage_value()
-                        self.damage_boss(orb_impact_damage)
+                        self.damage_boss(orb_impact_damage, source="fire_orb_impact")
                         self.boss.fire_orb_hit_cd = 0.35
                     self.boss.burn_timer = max(self.boss.burn_timer, 3.0)
                     orb_burn_dps = self.fire_orb_burn_boss_dps_value()
+                    if orb_burn_dps >= self.boss.burn_dps:
+                        self.boss.burn_source = "fire_orb_burn"
                     self.boss.burn_dps = max(self.boss.burn_dps, orb_burn_dps)
 
         if self.player.fire_ring:
             ring_radius = self.player.fire_ring_radius
             ring_thickness = 10
             for enemy in self.enemies:
+                if enemy.is_ally:
+                    continue
                 dist = distance((enemy.x, enemy.y), (self.player.x, self.player.y))
                 if ring_radius - ring_thickness <= dist <= ring_radius + ring_thickness:
                     enemy.burn_timer = max(enemy.burn_timer, 4.0)
-                    enemy.burn_dps = max(enemy.burn_dps, self.fire_ring_burn_dps_value())
+                    ring_burn = self.fire_ring_burn_dps_value()
+                    if ring_burn >= enemy.burn_dps:
+                        enemy.burn_source = "fire_ring_burn"
+                    enemy.burn_dps = max(enemy.burn_dps, ring_burn)
             if self.boss is not None:
                 dist = distance((self.boss.x, self.boss.y), (self.player.x, self.player.y))
                 if ring_radius - ring_thickness <= dist <= ring_radius + ring_thickness:
                     self.boss.burn_timer = max(self.boss.burn_timer, 4.0)
-                    self.boss.burn_dps = max(self.boss.burn_dps, self.fire_ring_burn_dps_value())
+                    ring_burn = self.fire_ring_burn_dps_value()
+                    if ring_burn >= self.boss.burn_dps:
+                        self.boss.burn_source = "fire_ring_burn"
+                    self.boss.burn_dps = max(self.boss.burn_dps, ring_burn)
 
         for pickup in list(self.pickups):
             if distance((pickup.x, pickup.y), (self.player.x, self.player.y)) < pickup.radius + self.player.radius:
@@ -4287,12 +4779,36 @@ class Game:
 
     def get_nearest_enemy(self):
         px, py = self.player.x, self.player.y
-        candidates = list(self.enemies)
+        candidates = [enemy for enemy in self.enemies if not enemy.is_ally and enemy.hp > 0]
         if self.boss is not None:
             candidates.append(self.boss)
         if not candidates:
             return None
         return min(candidates, key=lambda e: (e.x - px) ** 2 + (e.y - py) ** 2)
+
+    def get_nearest_hostile_for_ally(self, ally):
+        candidates = [enemy for enemy in self.enemies if enemy is not ally and not enemy.is_ally and enemy.hp > 0]
+        if self.boss is not None and self.boss.hp > 0:
+            candidates.append(self.boss)
+        if not candidates:
+            return None
+        return min(candidates, key=lambda e: (e.x - ally.x) ** 2 + (e.y - ally.y) ** 2)
+
+    def spawn_biochemist_ally(self, kind=None, source="bio_minions", duration=None):
+        if kind is None:
+            kind = random.choice(["basic", "fast", "tank", "shooter"])
+        angle = random.uniform(0.0, math.tau)
+        radius = random.uniform(70.0, 130.0)
+        x = clamp(self.player.x + math.cos(angle) * radius, 40, WIDTH - 40)
+        y = clamp(self.player.y + math.sin(angle) * radius, 40, HEIGHT - 40)
+        ally = Enemy(x, y, kind, self.wave)
+        ally.set_ally(
+            self.biochemist_summon_duration() if duration is None else duration,
+            source=source,
+            power=self.biochemist_ally_power(),
+        )
+        self.enemies.append(ally)
+        return ally
 
     def fire_rockets(self):
         target = self.get_nearest_enemy()
@@ -4326,6 +4842,7 @@ class Game:
             self.rockets.append(rocket)
 
     def update(self, dt):
+        self.combat_time += dt
         if self.state == "boss_death":
             self.boss_death_timer -= dt
             if self.boss_death_timer <= 0:
@@ -4339,12 +4856,23 @@ class Game:
         keys = pygame.key.get_pressed()
         pad_input = self.get_gamepad_input()
         self.player.update(dt, keys, move_input=pad_input["move"])
+        if self.player.ultimate_charge < self.player.ultimate_max:
+            regen_rate = self.player.ultimate_max / max(1.0, self.player.ultimate_regen_time)
+            self.player.ultimate_charge = min(
+                self.player.ultimate_max,
+                self.player.ultimate_charge + regen_rate * dt,
+            )
         if self.state == "playing" and self.wave_spawn_remaining > 0:
             self.wave_spawn_timer -= dt
             while self.wave_spawn_remaining > 0 and self.wave_spawn_timer <= 0:
                 self.spawn_random_wave_enemy(self.wave)
                 self.wave_spawn_remaining -= 1
                 self.wave_spawn_timer += self.wave_spawn_interval
+        if self.state == "playing" and self.boss is not None and self.boss.hp > 0:
+            self.boss_spawn_timer -= dt
+            while self.boss_spawn_timer <= 0:
+                self.spawn_random_wave_enemy(self.wave)
+                self.boss_spawn_timer += self.boss_spawn_interval
         if self.player.rocket_count > 0:
             self.player.rocket_timer += dt
             while self.player.rocket_timer >= self.player.rocket_cooldown:
@@ -4390,7 +4918,7 @@ class Game:
 
             if self.player.laser_orb_beam_timer > 0 and self.player.laser_orb_beam_pos:
                 beam_target = self.player.laser_orb_beam_target
-                candidates = list(self.enemies)
+                candidates = [enemy for enemy in self.enemies if not enemy.is_ally and enemy.hp > 0]
                 if self.boss is not None:
                     candidates.append(self.boss)
                 if (
@@ -4419,17 +4947,19 @@ class Game:
                     beam_width = 8
                     laser_orb_damage = self.laser_orb_damage_value()
                     for enemy in list(self.enemies):
+                        if enemy.is_ally:
+                            continue
                         dist = point_segment_distance(enemy.x, enemy.y, sx, sy, ex, ey)
                         if dist <= enemy.radius + beam_width:
-                            self.damage_enemy(enemy, laser_orb_damage)
+                            self.damage_enemy(enemy, laser_orb_damage, source="laser_orb")
                     if self.boss is not None:
                         dist = point_segment_distance(self.boss.x, self.boss.y, sx, sy, ex, ey)
                         if dist <= self.boss.radius + beam_width:
-                            self.damage_boss(laser_orb_damage)
+                            self.damage_boss(laser_orb_damage, source="laser_orb")
         if self.player.electroelf_level > 0:
             if self.player.electroelf is None:
                 self.player.electroelf = ElectroElf()
-            targets = list(self.enemies)
+            targets = [enemy for enemy in self.enemies if not enemy.is_ally and enemy.hp > 0]
             if self.boss is not None:
                 targets.append(self.boss)
             self.player.electroelf.update(dt, targets)
@@ -4461,9 +4991,28 @@ class Game:
                     self.player.fire(target_pos, self.projectiles)
 
         for enemy in self.enemies:
-            enemy.update(dt, (self.player.x, self.player.y), self.projectiles, self.wave)
-            if enemy.kind == "tank" and enemy.beam_hits_player((self.player.x, self.player.y)):
-                self.damage_player(22 + self.wave * 0.4)
+            hp_before = enemy.hp
+            ally_target = None
+            if enemy.is_ally:
+                target = self.get_nearest_hostile_for_ally(enemy)
+                if target is not None:
+                    ally_target = (target.x, target.y)
+                else:
+                    ally_target = (self.player.x, self.player.y)
+            enemy.update(dt, (self.player.x, self.player.y), self.projectiles, self.wave, ally_target_pos=ally_target)
+            burn_damage = max(0.0, hp_before - enemy.hp)
+            if burn_damage > 0:
+                self.record_damage_stat(getattr(enemy, "burn_source", "fire_orb_burn"), burn_damage)
+            if enemy.is_ally and enemy.kind == "tank" and enemy.beam_active > 0:
+                for hostile in self.enemies:
+                    if hostile is enemy or hostile.is_ally:
+                        continue
+                    if enemy.beam_hits_entity((hostile.x, hostile.y), hostile.radius):
+                        self.damage_enemy(hostile, (22 + self.wave * 0.4) * enemy.ally_power, source=enemy.ally_source)
+                if self.boss is not None and enemy.beam_hits_entity((self.boss.x, self.boss.y), self.boss.radius):
+                    self.damage_boss((22 + self.wave * 0.4) * enemy.ally_power, source=enemy.ally_source)
+            if (not enemy.is_ally) and enemy.kind == "tank" and enemy.beam_hits_player((self.player.x, self.player.y)):
+                self.damage_player(22 + self.wave * 0.4, source="tank_beam")
 
         for enemy in list(self.enemies):
             if enemy.hp <= 0:
@@ -4471,16 +5020,21 @@ class Game:
                 self.on_enemy_killed(enemy)
 
         if self.boss is not None:
+            boss_hp_before = self.boss.hp
             self.boss.update(
                 dt,
                 (self.player.x, self.player.y),
                 self.projectiles,
                 self.boss_zones,
                 self.wave,
-                self.boss_attack_damage(),
+                self.boss_projectile_damage(),
+                self.boss_zone_damage(),
             )
+            boss_burn_damage = max(0.0, boss_hp_before - self.boss.hp)
+            if boss_burn_damage > 0:
+                self.record_damage_stat(getattr(self.boss, "burn_source", "fire_orb_burn"), boss_burn_damage)
             if self.boss.laser_hits_player((self.player.x, self.player.y)) and self.boss.can_laser_damage():
-                self.damage_player(self.boss_attack_damage())
+                self.damage_player(self.boss_laser_damage(), source="boss_laser")
             if self.boss is not None and self.boss.hp <= 0:
                 self.on_boss_killed()
 
@@ -4510,6 +5064,8 @@ class Game:
                 continue
             hit = None
             for enemy in self.enemies:
+                if enemy.is_ally:
+                    continue
                 if distance((rocket.x, rocket.y), (enemy.x, enemy.y)) < rocket.radius + enemy.radius:
                     hit = enemy
                     break
@@ -4519,11 +5075,13 @@ class Game:
                     hit_boss = True
             if hit or hit_boss:
                 for enemy in list(self.enemies):
+                    if enemy.is_ally:
+                        continue
                     if distance((rocket.x, rocket.y), (enemy.x, enemy.y)) <= rocket.explosion_radius:
-                        self.damage_enemy(enemy, rocket.damage)
+                        self.damage_enemy(enemy, rocket.damage, source="rockets")
                 if self.boss is not None:
                     if distance((rocket.x, rocket.y), (self.boss.x, self.boss.y)) <= rocket.explosion_radius:
-                        self.damage_boss(rocket.damage)
+                        self.damage_boss(rocket.damage, source="rockets")
                 self.explosions.append(
                     Explosion(rocket.x, rocket.y, rocket.explosion_radius, duration=0.25)
                 )
@@ -4554,16 +5112,18 @@ class Game:
             if zone.should_tick():
                 damage = self.player.damage * 0.6
                 for enemy in list(self.enemies):
+                    if enemy.is_ally:
+                        continue
                     if distance((enemy.x, enemy.y), (zone.x, zone.y)) <= zone.radius:
-                        self.damage_enemy(enemy, damage)
+                        self.damage_enemy(enemy, damage, source="ultimate_zone")
                 if self.boss is not None:
                     if distance((self.boss.x, self.boss.y), (zone.x, zone.y)) <= zone.radius:
-                        self.damage_boss(damage)
+                        self.damage_boss(damage, source="ultimate_zone")
             if zone.time_left <= 0:
                 self.ultimate_zones.remove(zone)
 
         for constellation in list(self.ultimate_constellations):
-            constellation_targets = list(self.enemies)
+            constellation_targets = [enemy for enemy in self.enemies if not enemy.is_ally and enemy.hp > 0]
             if self.boss is not None:
                 constellation_targets.append(self.boss)
             constellation.update(dt, constellation_targets)
@@ -4581,6 +5141,8 @@ class Game:
                 boss_hit = False
                 for (sx, sy), (ex, ey) in constellation.segments():
                     for enemy in self.enemies:
+                        if enemy.is_ally:
+                            continue
                         if enemy in hit_enemies:
                             continue
                         dist = point_segment_distance(enemy.x, enemy.y, sx, sy, ex, ey)
@@ -4592,9 +5154,9 @@ class Game:
                             boss_hit = True
 
                 for enemy in list(hit_enemies):
-                    self.damage_enemy(enemy, tick_damage)
+                    self.damage_enemy(enemy, tick_damage, source="ultimate_constellation")
                 if boss_hit:
-                    self.damage_boss(tick_damage * 0.85)
+                    self.damage_boss(tick_damage * 0.85, source="ultimate_constellation")
 
             if constellation.time_left <= 0:
                 cx, cy = constellation.center()
@@ -4610,6 +5172,8 @@ class Game:
                 continue
 
             for enemy in self.enemies:
+                if enemy.is_ally:
+                    continue
                 singularity.pull_entity(enemy, dt, weight=1.0)
             if self.boss is not None:
                 singularity.pull_entity(self.boss, dt, weight=0.25)
@@ -4620,17 +5184,19 @@ class Game:
                 ) * self.ultimate_damage_scale(0.16, cap=5.5)
                 center_bonus = 1.35 + min(0.5, self.ultimate_boss_level() * 0.02)
                 for enemy in list(self.enemies):
+                    if enemy.is_ally:
+                        continue
                     d = distance((enemy.x, enemy.y), (singularity.x, singularity.y))
                     if d <= singularity.radius:
                         damage = tick_damage * (center_bonus if d <= singularity.core_radius * 2 else 1.0)
-                        self.damage_enemy(enemy, damage)
+                        self.damage_enemy(enemy, damage, source="ultimate_singularity")
                 if self.boss is not None:
                     d = distance((self.boss.x, self.boss.y), (singularity.x, singularity.y))
                     if d <= singularity.radius:
                         damage = tick_damage * 0.8
                         if d <= singularity.core_radius * 2:
                             damage *= center_bonus
-                        self.damage_boss(damage)
+                        self.damage_boss(damage, source="ultimate_singularity")
 
             # End behavior handled by singularity.exiting -> singularity.finished.
 
@@ -4645,6 +5211,8 @@ class Game:
                 boss_hit = False
                 for (sx, sy), (ex, ey) in blade.segments():
                     for enemy in self.enemies:
+                        if enemy.is_ally:
+                            continue
                         if enemy in hit_enemies:
                             continue
                         dist = point_segment_distance(enemy.x, enemy.y, sx, sy, ex, ey)
@@ -4655,9 +5223,9 @@ class Game:
                         if dist <= self.boss.radius + hit_radius:
                             boss_hit = True
                 for enemy in list(hit_enemies):
-                    self.damage_enemy(enemy, touch_damage)
+                    self.damage_enemy(enemy, touch_damage, source="ultimate_prismatic_blade")
                 if boss_hit:
-                    self.damage_boss(touch_damage)
+                    self.damage_boss(touch_damage, source="ultimate_prismatic_blade")
             if blade.time_left <= 0:
                 self.ultimate_pulses.append(UltimatePulse(blade.x, blade.y, 180, duration=0.24))
                 self.ultimate_prismatic_blades.remove(blade)
@@ -4665,7 +5233,7 @@ class Game:
         for overdrive in list(self.ultimate_vector_overdrives):
             overdrive.update(dt, (self.player.x, self.player.y))
             if overdrive.should_tick():
-                targets = list(self.enemies)
+                targets = [enemy for enemy in self.enemies if not enemy.is_ally and enemy.hp > 0]
                 if self.boss is not None:
                     targets.append(self.boss)
                 targets.sort(key=lambda e: (e.x - self.player.x) ** 2 + (e.y - self.player.y) ** 2)
@@ -4685,9 +5253,9 @@ class Game:
                         chain_points.append((target.x, target.y))
                         dmg = base_damage * (chain_decay ** i)
                         if self.boss is not None and target is self.boss:
-                            self.damage_boss(dmg * 0.75)
+                            self.damage_boss(dmg * 0.75, source="ultimate_vector_overdrive")
                         else:
-                            self.damage_enemy(target, dmg)
+                            self.damage_enemy(target, dmg, source="ultimate_vector_overdrive")
                     overdrive.set_chain(chain_points)
             if overdrive.time_left <= 0:
                 self.player.vector_overdrive_time = 0.0
@@ -4720,19 +5288,21 @@ class Game:
                 self.ultimate_spectral_swarms.remove(swarm)
 
         for shard in list(self.ultimate_spectral_shards):
-            targets = list(self.enemies)
+            targets = [enemy for enemy in self.enemies if not enemy.is_ally and enemy.hp > 0]
             if self.boss is not None:
                 targets.append(self.boss)
             shard.update(dt, targets)
             hit = False
             for enemy in list(self.enemies):
+                if enemy.is_ally:
+                    continue
                 if distance((shard.x, shard.y), (enemy.x, enemy.y)) <= shard.radius + enemy.radius:
-                    self.damage_enemy(enemy, shard.damage)
+                    self.damage_enemy(enemy, shard.damage, source="ultimate_spectral_swarm")
                     hit = True
                     break
             if not hit and self.boss is not None:
                 if distance((shard.x, shard.y), (self.boss.x, self.boss.y)) <= shard.radius + self.boss.radius:
-                    self.damage_boss(shard.damage * 0.78)
+                    self.damage_boss(shard.damage * 0.78, source="ultimate_spectral_swarm")
                     hit = True
             if hit:
                 self.spawn_pulse(
@@ -4751,7 +5321,7 @@ class Game:
                 self.ultimate_spectral_shards.remove(shard)
 
         for prism in list(self.ultimate_fractal_prisms):
-            candidates = list(self.enemies)
+            candidates = [enemy for enemy in self.enemies if not enemy.is_ally and enemy.hp > 0]
             if self.boss is not None:
                 candidates.append(self.boss)
             prism.update(dt, candidates)
@@ -4787,9 +5357,9 @@ class Game:
                             points.append((target.x, target.y))
                             dmg = base_damage * (chain_decay ** i)
                             if self.boss is not None and target is self.boss:
-                                self.damage_boss(dmg * 0.76)
+                                self.damage_boss(dmg * 0.76, source="ultimate_fractal_prism")
                             else:
-                                self.damage_enemy(target, dmg)
+                                self.damage_enemy(target, dmg, source="ultimate_fractal_prism")
                         prism.set_chain(points)
 
             if prism.time_left <= 0:
@@ -4801,7 +5371,7 @@ class Game:
             if zone.should_damage:
                 zone.should_damage = False
                 if distance((zone.x, zone.y), (self.player.x, self.player.y)) <= zone.radius + self.player.radius:
-                    self.damage_player(zone.damage)
+                    self.damage_player(zone.damage, source="boss_zone")
             if zone.time_left <= 0:
                 self.boss_zones.remove(zone)
 
@@ -4810,11 +5380,13 @@ class Game:
             if strike.should_damage:
                 strike.should_damage = False
                 for enemy in list(self.enemies):
+                    if enemy.is_ally:
+                        continue
                     if distance((enemy.x, enemy.y), (strike.ex, strike.ey)) <= strike.radius:
-                        self.damage_enemy(enemy, strike.damage)
+                        self.damage_enemy(enemy, strike.damage, source="electroelf")
                 if self.boss is not None:
                     if distance((self.boss.x, self.boss.y), (strike.ex, strike.ey)) <= strike.radius:
-                        self.damage_boss(strike.damage)
+                        self.damage_boss(strike.damage, source="electroelf")
             if strike.time_left <= 0:
                 self.lightning_effects.remove(strike)
 
@@ -4831,7 +5403,7 @@ class Game:
 
         if (
             self.state == "playing"
-            and not self.enemies
+            and not any((not enemy.is_ally) and enemy.hp > 0 for enemy in self.enemies)
             and self.boss is None
             and self.wave_spawn_remaining <= 0
         ):
@@ -4983,7 +5555,7 @@ class Game:
         wave_rect = pygame.Rect(wave_x, top_y, wave_w, wave_h)
         draw_panel(wave_rect)
         if self.boss is not None and self.boss.max_hp > 0:
-            wave_ratio = clamp(1.0 - (self.boss.hp / self.boss.max_hp), 0, 1)
+            wave_ratio = clamp(self.boss.hp / self.boss.max_hp, 0, 1)
             wave_label = "BOSS"
             wave_fill = (195, 145, 255)
         elif self.wave_total > 0:
@@ -5008,15 +5580,26 @@ class Game:
 
         # Score panel #
         score_w = 210
-        score_h = 40
+        score_h = 58
         score_rect = pygame.Rect(WIDTH - score_w - margin, top_y, score_w, score_h)
         draw_panel(score_rect)
-        draw_tag(
-            f"SCORE {self.score}",
-            score_rect.centerx,
-            score_rect.y + 6,
-            color=(120, 220, 255),
+        score_kicker = self.font.render("SCORE", True, (120, 220, 255))
+        score_kicker_shadow = self.font.render("SCORE", True, (10, 14, 24))
+        score_value = self.big_font.render(str(self.score), True, (228, 244, 255))
+        score_value_shadow = self.big_font.render(str(self.score), True, (10, 14, 24))
+        self.screen.blit(score_kicker_shadow, (score_rect.x + 14 + 1, score_rect.y + 8 + 1))
+        self.screen.blit(score_kicker, (score_rect.x + 14, score_rect.y + 8))
+        self.screen.blit(
+            score_value_shadow,
+            (score_rect.right - score_value.get_width() - 14 + 1, score_rect.y + 20 + 1),
         )
+        self.screen.blit(
+            score_value,
+            (score_rect.right - score_value.get_width() - 14, score_rect.y + 20),
+        )
+        score_line = pygame.Surface((score_rect.width - 28, 2), pygame.SRCALPHA)
+        score_line.fill((95, 190, 245, 90))
+        self.screen.blit(score_line, (score_rect.x + 14, score_rect.y + 24))
 
         # Buff panel #
         buff_x = margin
@@ -5129,13 +5712,13 @@ class Game:
         shock_w = 240
         shock_h = 28
         shock_rect = pygame.Rect(
-            WIDTH - shock_w - margin, ult_rect.y - shock_h - 10, shock_w, shock_h
+            WIDTH - shock_w - margin, ult_rect.y - shock_h - 18, shock_w, shock_h
         )
         draw_panel(shock_rect, accent_lines=False)
         shock_ratio = clamp(
             self.player.shockwave_timer / max(0.01, self.player.shockwave_cooldown), 0, 1
         )
-        shock_label = "ONDE (E)"
+        shock_label = "INVOC (E)" if self.active_ultimate_key() == "vector_overdrive" else "ONDE (E)"
         shock_label_x = shock_rect.x + 10
         shock_label_shadow = self.font.render(shock_label, True, (10, 14, 24))
         shock_label_text = self.font.render(shock_label, True, (120, 220, 255))
@@ -5386,26 +5969,35 @@ class Game:
                     pygame.draw.polygon(preview, (105, 205, 255, 180), blade_pts)
                     pygame.draw.polygon(preview, (228, 246, 255, 220), blade_pts, 2)
             elif class_choice.ultimate_key == "vector_overdrive":
-                r = span * 0.23
-                pulse = 0.9 + 0.1 * math.sin(t * 7.5)
+                r = span * 0.26
+                pulse = 0.9 + 0.1 * math.sin(t * 6.5)
                 rr = int(r * pulse)
-                pygame.draw.circle(preview, (90, 220, 255, 50), (cx, cy), rr + 26, 10)
-                pygame.draw.circle(preview, (170, 244, 255, 165), (cx, cy), rr + 8, 3)
-                targets = []
-                for i in range(5):
-                    ang = t * 0.9 + i * (math.tau / 5)
-                    tx = cx + math.cos(ang) * rr * (1.2 + 0.1 * math.sin(t * 1.7 + i))
-                    ty = cy + math.sin(ang) * rr * (0.9 + 0.2 * math.cos(t * 1.3 + i))
-                    targets.append((tx, ty))
-                    draw_target_dot(tx, ty, 3)
+                pygame.draw.circle(preview, (90, 220, 255, 40), (cx, cy), rr + 34, 10)
+                pygame.draw.circle(preview, (170, 244, 255, 155), (cx, cy), rr + 6, 3)
+                pygame.draw.circle(preview, (240, 252, 255, 120), (cx, cy), max(14, rr // 3), 2)
 
-                chain = [(cx, cy)] + targets[:]
-                for i in range(len(chain) - 1):
-                    a = chain[i]
-                    b = chain[i + 1]
-                    pygame.draw.line(preview, (100, 220, 255, 70), a, b, 9)
-                    pygame.draw.line(preview, (170, 244, 255, 190), a, b, 4)
-                    pygame.draw.line(preview, (255, 255, 255, 230), a, b, 2)
+                hostile_pts = []
+                ally_pts = []
+                for i in range(5):
+                    ang = t * 0.7 + i * (math.tau / 5)
+                    hx = cx + math.cos(ang) * rr * 1.35
+                    hy = cy + math.sin(ang) * rr * 1.05
+                    hostile_pts.append((hx, hy))
+                    draw_target_dot(hx, hy, 3)
+                    poly = Enemy._regular_polygon((hx, hy), 10, 4, ang + math.pi / 4)
+                    pygame.draw.polygon(preview, (255, 110, 110, 120), poly, 2)
+
+                    ax = cx + math.cos(ang + 0.38) * rr * 0.72
+                    ay = cy + math.sin(ang + 0.38) * rr * 0.58
+                    ally_pts.append((ax, ay))
+                    star = Enemy._star_polygon((ax, ay), 10, 5, 5, -math.pi / 2)
+                    pygame.draw.polygon(preview, (120, 220, 255, 165), star)
+                    pygame.draw.polygon(preview, (235, 248, 255, 220), star, 1)
+
+                for (hx, hy), (ax, ay) in zip(hostile_pts, ally_pts):
+                    pygame.draw.line(preview, (120, 220, 255, 70), (hx, hy), (ax, ay), 8)
+                    pygame.draw.line(preview, (190, 242, 255, 200), (hx, hy), (ax, ay), 3)
+                    pygame.draw.line(preview, (255, 255, 255, 210), (hx, hy), (ax, ay), 1)
             elif class_choice.ultimate_key == "spectral_swarm":
                 hub_r = int(span * 0.28 + 6 * math.sin(t * 5.8))
                 pygame.draw.circle(preview, (155, 110, 255, 62), (cx, cy), hub_r + 10, 7)
@@ -5617,6 +6209,19 @@ class Game:
         hint = self.font.render("Choisis un bouton pour continuer", True, (168, 200, 225))
         self.screen.blit(hint, (panel_rect.centerx - hint.get_width() / 2, panel_rect.y + 110))
 
+        left_stats_rect = self.get_damage_stats_rect(
+            panel_rect,
+            "Degats recus",
+            top_margin=40,
+            bottom_margin=40,
+            side="left",
+            player_stats=True,
+        )
+        self.draw_damage_stats_panel(left_stats_rect, "Degats recus", player_stats=True)
+
+        stats_rect = self.get_damage_stats_rect(panel_rect, "Bilan des degats", top_margin=40, bottom_margin=40)
+        self.draw_damage_stats_panel(stats_rect, "Bilan des degats")
+
         mouse_pos = pygame.mouse.get_pos()
         for idx, btn in enumerate(self.ui_buttons):
             rect = btn["rect"]
@@ -5648,6 +6253,19 @@ class Game:
 
         title = self.big_font.render("Pause", True, (220, 242, 255))
         self.screen.blit(title, (panel_rect.centerx - title.get_width() / 2, panel_rect.y + 26))
+
+        left_stats_rect = self.get_damage_stats_rect(
+            panel_rect,
+            "Degats recus",
+            top_margin=40,
+            bottom_margin=40,
+            side="left",
+            player_stats=True,
+        )
+        self.draw_damage_stats_panel(left_stats_rect, "Degats recus", player_stats=True)
+
+        stats_rect = self.get_damage_stats_rect(panel_rect, "Stats de degats", top_margin=40, bottom_margin=40)
+        self.draw_damage_stats_panel(stats_rect, "Stats de degats")
 
         mouse_pos = pygame.mouse.get_pos()
         for idx, btn in enumerate(self.ui_buttons):
