@@ -60,6 +60,133 @@ def random_spawn_point():
         return -30, random.randint(0, HEIGHT)
     return WIDTH + 30, random.randint(0, HEIGHT)
 
+def draw_sword(surf, x, y, angle, sword_length, beam_width, alpha_ratio, hilt_ratio=0.22):
+    """
+    Dessine une épée détaillée.
+    
+    Args:
+        surf: Surface pygame sur laquelle dessiner
+        x, y: Position de la garde (base de l'épée)
+        angle: Angle en radians de l'orientation de l'épée
+        sword_length: Longueur totale de l'épée
+        beam_width: Largeur de base de l'épée
+        alpha_ratio: Ratio d'opacité (0 à 1)
+        hilt_ratio: Proportion du manche (défaut 0.22)
+    """
+    ux = math.cos(angle)
+    uy = math.sin(angle)
+    px = -uy
+    py = ux
+    ratio = clamp(alpha_ratio, 0.0, 1.0)
+    
+    hilt_len = sword_length * hilt_ratio
+    blade_len = sword_length * (1.0 - hilt_ratio)
+    blade_base_x = x + ux * 2.0
+    blade_base_y = y + uy * 2.0
+    tip_x = blade_base_x + ux * blade_len
+    tip_y = blade_base_y + uy * blade_len
+    handle_end_x = x - ux * hilt_len
+    handle_end_y = y - uy * hilt_len
+
+    guard_half = max(24.0, beam_width * 1.32)
+    handle_w = max(18.0, beam_width * 1.04)
+    blade_w = max(18.0, beam_width * 0.88)
+    blade_mid_w = blade_w * 0.82
+    blade_mid_x = blade_base_x + ux * blade_len * 0.72
+    blade_mid_y = blade_base_y + uy * blade_len * 0.72
+    blade_near_tip_w = blade_w * 0.62
+    blade_near_tip_x = blade_base_x + ux * blade_len * 0.92
+    blade_near_tip_y = blade_base_y + uy * blade_len * 0.92
+
+    # Neon trail
+    pygame.draw.line(
+        surf,
+        (150, 222, 255, int(85 + 65 * ratio)),
+        (int(x), int(y)),
+        (int(tip_x), int(tip_y)),
+        max(4, int(beam_width * 0.34)),
+    )
+    pygame.draw.line(
+        surf,
+        (250, 252, 255, int(120 + 80 * ratio)),
+        (int(x), int(y)),
+        (int(tip_x), int(tip_y)),
+        2,
+    )
+
+    # Blade polygon
+    blade_pts = [
+        (int(blade_base_x + px * blade_w), int(blade_base_y + py * blade_w)),
+        (int(blade_mid_x + px * blade_mid_w), int(blade_mid_y + py * blade_mid_w)),
+        (int(blade_near_tip_x + px * blade_near_tip_w), int(blade_near_tip_y + py * blade_near_tip_w)),
+        (int(tip_x), int(tip_y)),
+        (int(blade_near_tip_x - px * blade_near_tip_w), int(blade_near_tip_y - py * blade_near_tip_w)),
+        (int(blade_mid_x - px * blade_mid_w), int(blade_mid_y - py * blade_mid_w)),
+        (int(blade_base_x - px * blade_w), int(blade_base_y - py * blade_w)),
+    ]
+    pygame.draw.polygon(surf, (105, 205, 255, int(138 + 82 * ratio)), blade_pts)
+    pygame.draw.polygon(surf, (228, 246, 255, int(205 + 40 * ratio)), blade_pts, 2)
+
+    # Fuller (blade groove)
+    fuller_end_x = blade_base_x + ux * blade_len * 0.83
+    fuller_end_y = blade_base_y + uy * blade_len * 0.83
+    pygame.draw.line(
+        surf,
+        (255, 255, 255, int(170 + 70 * ratio)),
+        (int(blade_base_x), int(blade_base_y)),
+        (int(fuller_end_x), int(fuller_end_y)),
+        max(1, int(beam_width * 0.12)),
+    )
+
+    # Guard
+    guard_l = (x + px * guard_half, y + py * guard_half)
+    guard_r = (x - px * guard_half, y - py * guard_half)
+    pygame.draw.line(
+        surf,
+        (115, 225, 255, int(150 + 72 * ratio)),
+        (int(guard_l[0]), int(guard_l[1])),
+        (int(guard_r[0]), int(guard_r[1])),
+        max(6, int(beam_width * 0.32)),
+    )
+    pygame.draw.line(
+        surf,
+        (255, 255, 255, int(175 + 65 * ratio)),
+        (int(guard_l[0]), int(guard_l[1])),
+        (int(guard_r[0]), int(guard_r[1])),
+        2,
+    )
+
+    # Handle
+    pygame.draw.line(
+        surf,
+        (66, 44, 92, int(178 + 60 * ratio)),
+        (int(x), int(y)),
+        (int(handle_end_x), int(handle_end_y)),
+        int(handle_w + 5),
+    )
+    pygame.draw.line(
+        surf,
+        (230, 182, 255, int(188 + 52 * ratio)),
+        (int(x), int(y)),
+        (int(handle_end_x), int(handle_end_y)),
+        3,
+    )
+
+    # Pommel
+    pommel_r = max(5, int(handle_w * 1.05))
+    pygame.draw.circle(
+        surf,
+        (95, 210, 255, int(170 + 68 * ratio)),
+        (int(handle_end_x), int(handle_end_y)),
+        pommel_r + 2,
+    )
+    pygame.draw.circle(
+        surf,
+        (255, 255, 255, int(192 + 56 * ratio)),
+        (int(handle_end_x), int(handle_end_y)),
+        max(2, pommel_r // 2 + 1),
+    )
+
 ###################
 # --- Classes --- #
 ###################
@@ -590,9 +717,14 @@ class Enemy:
         rect = surf.get_rect(center=(int(self.x), int(self.y)))
         screen.blit(surf, rect.topleft)
     
-    def set_ally(self, duration, source="bio_minions", power=1.0):
+    def set_ally(self, duration=None, source="bio_minions", power=1.0):
         self.is_ally = True
-        self.ally_time = max(self.ally_time, duration)
+        if self.ally_time < 0:
+            pass
+        elif duration is None or duration <= 0:
+            self.ally_time = -1.0
+        else:
+            self.ally_time = max(self.ally_time, duration)
         self.ally_source = source
         self.ally_power = max(self.ally_power, power)
         self.neon_primary = (110, 220, 255)
@@ -632,9 +764,10 @@ class Enemy:
         self.fire_orb_hit_cd = max(0.0, self.fire_orb_hit_cd - dt)
         self.ally_hit_cd = max(0.0, self.ally_hit_cd - dt)
         if self.is_ally:
-            self.ally_time = max(0.0, self.ally_time - dt)
-            if self.ally_time <= 0:
-                self.clear_ally_state()
+            if self.ally_time > 0:
+                self.ally_time = max(0.0, self.ally_time - dt)
+                if self.ally_time <= 0:
+                    self.clear_ally_state()
 
         if self.kind == "tank":
             if self.beam_active > 0:
@@ -1992,107 +2125,71 @@ class UltimatePrismaticBlade:
                 2,
             )
 
-            # Neon trail.
-            pygame.draw.line(
-                surf,
-                (150, 222, 255, int(85 + 65 * ratio)),
-                (int(sx), int(sy)),
-                (int(ex), int(ey)),
-                max(4, int(self.beam_width * 0.34)),
-            )
-            pygame.draw.line(
-                surf,
-                (250, 252, 255, int(120 + 80 * ratio)),
-                (int(sx), int(sy)),
-                (int(ex), int(ey)),
-                2,
-            )
-            # Epée vectorielle (sans sprite).
-            hilt_len = self.total_sword_length * self.hilt_ratio
-            blade_len = self.total_sword_length - hilt_len
-            blade_base_x = sx + ux * 2.0
-            blade_base_y = sy + uy * 2.0
-            tip_x = blade_base_x + ux * blade_len
-            tip_y = blade_base_y + uy * blade_len
-            handle_end_x = sx - ux * hilt_len
-            handle_end_y = sy - uy * hilt_len
+            # Dessiner l'épée en utilisant la fonction générique
+            angle = math.atan2(uy, ux)
+            draw_sword(surf, sx, sy, angle, self.total_sword_length, self.beam_width, ratio, self.hilt_ratio)
 
-            guard_half = max(24.0, self.beam_width * 1.32)
-            handle_w = max(18.0, self.beam_width * 1.04)  # manche x2
-            blade_w = max(18.0, self.beam_width * 0.88)   # epée x2 en largeur
-            blade_mid_w = blade_w * 0.82
-            blade_mid_x = blade_base_x + ux * blade_len * 0.72
-            blade_mid_y = blade_base_y + uy * blade_len * 0.72
-            blade_near_tip_w = blade_w * 0.62
-            blade_near_tip_x = blade_base_x + ux * blade_len * 0.92
-            blade_near_tip_y = blade_base_y + uy * blade_len * 0.92
+        screen.blit(surf, (0, 0))
 
-            blade_pts = [
-                (int(blade_base_x + px * blade_w), int(blade_base_y + py * blade_w)),
-                (int(blade_mid_x + px * blade_mid_w), int(blade_mid_y + py * blade_mid_w)),
-                (int(blade_near_tip_x + px * blade_near_tip_w), int(blade_near_tip_y + py * blade_near_tip_w)),
-                (int(tip_x), int(tip_y)),
-                (int(blade_near_tip_x - px * blade_near_tip_w), int(blade_near_tip_y - py * blade_near_tip_w)),
-                (int(blade_mid_x - px * blade_mid_w), int(blade_mid_y - py * blade_mid_w)),
-                (int(blade_base_x - px * blade_w), int(blade_base_y - py * blade_w)),
-            ]
-            pygame.draw.polygon(surf, (105, 205, 255, int(138 + 82 * ratio)), blade_pts)
-            pygame.draw.polygon(surf, (228, 246, 255, int(205 + 40 * ratio)), blade_pts, 2)
 
-            fuller_end_x = blade_base_x + ux * blade_len * 0.83
-            fuller_end_y = blade_base_y + uy * blade_len * 0.83
-            pygame.draw.line(
-                surf,
-                (255, 255, 255, int(170 + 70 * ratio)),
-                (int(blade_base_x), int(blade_base_y)),
-                (int(fuller_end_x), int(fuller_end_y)),
-                max(1, int(self.beam_width * 0.12)),
-            )
+class BladeSkillSlash:
+    def __init__(self, x, y, angle, speed, max_distance, length, width, damage):
+        self.x = x
+        self.y = y
+        self.angle = angle
+        self.speed = speed
+        self.max_distance = max_distance
+        self.length = length
+        self.width = width
+        self.damage = damage
+        self.traveled = 0.0
+        self.time_left = 2.5
+        self.hit_enemies = set()
+        self.hit_boss = False
+        self.hilt_ratio = 0.22
 
-            guard_l = (sx + px * guard_half, sy + py * guard_half)
-            guard_r = (sx - px * guard_half, sy - py * guard_half)
-            pygame.draw.line(
-                surf,
-                (115, 225, 255, int(150 + 72 * ratio)),
-                (int(guard_l[0]), int(guard_l[1])),
-                (int(guard_r[0]), int(guard_r[1])),
-                max(6, int(self.beam_width * 0.32)),
-            )
-            pygame.draw.line(
-                surf,
-                (255, 255, 255, int(175 + 65 * ratio)),
-                (int(guard_l[0]), int(guard_l[1])),
-                (int(guard_r[0]), int(guard_r[1])),
-                2,
-            )
+    def update(self, dt):
+        vx = math.cos(self.angle) * self.speed
+        vy = math.sin(self.angle) * self.speed
+        self.x += vx * dt
+        self.y += vy * dt
+        self.traveled += self.speed * dt
+        self.time_left -= dt
 
-            pygame.draw.line(
-                surf,
-                (66, 44, 92, int(178 + 60 * ratio)),
-                (int(sx), int(sy)),
-                (int(handle_end_x), int(handle_end_y)),
-                int(handle_w + 5),
-            )
-            pygame.draw.line(
-                surf,
-                (230, 182, 255, int(188 + 52 * ratio)),
-                (int(sx), int(sy)),
-                (int(handle_end_x), int(handle_end_y)),
-                3,
-            )
-            pommel_r = max(5, int(handle_w * 1.05))
-            pygame.draw.circle(
-                surf,
-                (95, 210, 255, int(170 + 68 * ratio)),
-                (int(handle_end_x), int(handle_end_y)),
-                pommel_r + 2,
-            )
-            pygame.draw.circle(
-                surf,
-                (255, 255, 255, int(192 + 56 * ratio)),
-                (int(handle_end_x), int(handle_end_y)),
-                max(2, pommel_r // 2 + 1),
-            )
+    def expired(self):
+        return self.time_left <= 0 or self.traveled >= self.max_distance
+
+    def segment(self):
+        ux = math.cos(self.angle)
+        uy = math.sin(self.angle)
+        hilt_len = self.length * self.hilt_ratio
+        blade_len = self.length * (1.0 - self.hilt_ratio)
+        sx = self.x - ux * hilt_len
+        sy = self.y - uy * hilt_len
+        ex = self.x + ux * blade_len
+        ey = self.y + uy * blade_len
+        return sx, sy, ex, ey
+
+    def hits_entity(self, tx, ty, radius):
+        sx, sy, ex, ey = self.segment()
+        dist = point_segment_distance(tx, ty, sx, sy, ex, ey)
+        return dist <= radius + self.width * 0.48
+
+    def draw(self, screen):
+        ratio = clamp(self.time_left / 0.85, 0.0, 1.0)
+        
+        surf = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        
+        # Déterminer la position de la garde et l'angle
+        ux = math.cos(self.angle)
+        uy = math.sin(self.angle)
+        hilt_len = self.length * self.hilt_ratio
+        # Position de la garde
+        guard_x = self.x - ux * hilt_len
+        guard_y = self.y - uy * hilt_len
+        
+        # Dessiner l'épée en utilisant la fonction générique
+        draw_sword(surf, guard_x, guard_y, self.angle, self.length, self.width, ratio, self.hilt_ratio)
 
         screen.blit(surf, (0, 0))
 
@@ -2969,6 +3066,7 @@ DAMAGE_SOURCE_ORDER = [
     "laser_orb",
     "electroelf",
     "rockets",
+    "blade_skill",
     "shockwave",
     "bio_minions",
     "ultimate_constellation",
@@ -2989,6 +3087,7 @@ DAMAGE_SOURCE_META = {
     "laser_orb": {"label": "Orbe laser", "upgrade_key": "laser_orb"},
     "electroelf": {"label": "Electroelf", "upgrade_key": "electroelf"},
     "rockets": {"label": "Lance roquette", "upgrade_key": "rockets"},
+    "blade_skill": {"label": "Lame geante", "upgrade_key": None},
     "shockwave": {"label": "Onde de choc", "upgrade_key": None},
     "bio_minions": {"label": "Invocations chimiques", "upgrade_key": None},
     "ultimate_constellation": {"label": "Ulti: Constellation Laser", "upgrade_key": None},
@@ -3088,6 +3187,7 @@ class Game:
         self.enemies = []
         self.projectiles = []
         self.rockets = []
+        self.blade_skill_slashes = []
         self.explosions = []
         self.lightning_effects = []
         self.ultimate_beams = []
@@ -3146,6 +3246,8 @@ class Game:
         self.menu_nav_hold = (0, 0)
         self.menu_nav_repeat_timer = 0.0
         self.base_fire_enabled = True
+        self.state = "start_menu"
+        self.build_start_menu_buttons()
         self.refresh_gamepad()
 
     def refresh_gamepad(self):
@@ -3346,7 +3448,7 @@ class Game:
             self.menu_nav_hold = (0, 0)
             self.menu_nav_repeat_timer = 0.0
             return
-        if self.state not in ("class_select", "upgrade", "game_over", "pause"):
+        if self.state not in ("start_menu", "class_select", "upgrade", "game_over", "pause"):
             self.menu_nav_hold = (0, 0)
             self.menu_nav_repeat_timer = 0.0
             return
@@ -3375,6 +3477,12 @@ class Game:
         if self.menu_selected_index < 0 or self.menu_selected_index >= len(self.ui_buttons):
             self.menu_selected_index = 0
         btn = self.ui_buttons[self.menu_selected_index]
+        if self.state == "start_menu":
+            if btn["action"] == "play":
+                self.open_class_select()
+            else:
+                return "quit"
+            return True
         if self.state == "class_select":
             self.select_class(btn["class_choice"])
             return True
@@ -3739,6 +3847,7 @@ class Game:
         self.enemies.clear()
         self.projectiles.clear()
         self.rockets.clear()
+        self.blade_skill_slashes.clear()
         self.explosions.clear()
         self.lightning_effects.clear()
         self.ultimate_beams.clear()
@@ -3777,6 +3886,10 @@ class Game:
         self.base_fire_enabled = True
         self.reset_damage_stats()
         self.spawn_wave(self.wave)
+        self.prepare_class_choices()
+        self.state = "class_select"
+
+    def open_class_select(self):
         self.prepare_class_choices()
         self.state = "class_select"
 
@@ -4005,6 +4118,29 @@ class Game:
             rect = pygame.Rect(x, y, card_w, card_h)
             self.ui_buttons.append({"rect": rect, "choice": choice})
 
+    def start_menu_panel_rect(self):
+        panel_w = int(clamp(WIDTH * 0.56, 560, 980))
+        panel_h = int(clamp(HEIGHT * 0.56, 380, 640))
+        panel_x = (WIDTH - panel_w) / 2
+        panel_y = (HEIGHT - panel_h) / 2
+        return pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+
+    def build_start_menu_buttons(self):
+        self.ui_buttons = []
+        self.menu_selected_index = 0
+        panel = self.start_menu_panel_rect()
+        play_w = int(panel.width * 0.58)
+        play_h = int(clamp(panel.height * 0.16, 62, 90))
+        quit_w = int(panel.width * 0.40)
+        quit_h = int(clamp(panel.height * 0.12, 48, 70))
+        gap = int(clamp(panel.height * 0.055, 14, 24))
+        play_x = panel.centerx - play_w / 2
+        play_y = panel.y + int(panel.height * 0.56)
+        quit_x = panel.centerx - quit_w / 2
+        quit_y = play_y + play_h + gap
+        self.ui_buttons.append({"rect": pygame.Rect(play_x, play_y, play_w, play_h), "action": "play"})
+        self.ui_buttons.append({"rect": pygame.Rect(quit_x, quit_y, quit_w, quit_h), "action": "quit"})
+
     def build_game_over_buttons(self):
         self.ui_buttons = []
         self.menu_selected_index = 0
@@ -4213,6 +4349,13 @@ class Game:
             self.enemies.remove(enemy)
             self.on_enemy_killed(enemy)
 
+    def damage_ally(self, ally, amount):
+        if ally not in self.enemies or not ally.is_ally or amount <= 0 or ally.hp <= 0:
+            return
+        ally.hp -= amount
+        if ally.hp <= 0 and ally in self.enemies:
+            self.enemies.remove(ally)
+
     def damage_boss(self, amount, source="other"):
         if self.boss is None or amount <= 0 or self.boss.hp <= 0:
             return
@@ -4309,6 +4452,23 @@ class Game:
     def prismatic_blade_width(self):
         return int(min(56, 30 + self.ultimate_boss_level() * 1.5))
 
+    def blade_skill_damage_value(self):
+        base = self.player_projectile_damage_value() * 1.85 + self.wave * 3.2
+        return base * self.ultimate_damage_scale(0.08, cap=3.2)
+
+    def blade_skill_speed(self):
+        return min(1700.0, 760.0 + self.ultimate_boss_level() * 28.0)
+
+
+    def blade_skill_width(self):
+        return int(min(60.0, 30.0 + self.ultimate_boss_level() * 2.0))
+
+    def blade_skill_length(self):
+        return int(min(1000.0, 700.0 + self.ultimate_boss_level() * 12.0))
+
+    def blade_skill_cluster_radius(self):
+        return min(320.0, 160.0 + self.ultimate_boss_level() * 8.0)
+
     def vector_overdrive_duration(self):
         return 8.0 + min(4.0, self.ultimate_boss_level() * 0.4)
 
@@ -4322,7 +4482,7 @@ class Game:
         return min(760.0, 430.0 + self.ultimate_boss_level() * 20.0)
 
     def biochemist_transmute_radius(self):
-        return min(420.0, 220.0 + self.ultimate_boss_level() * 16.0)
+        return min(840.0, 440.0 + self.ultimate_boss_level() * 32.0)
 
     def biochemist_transmute_duration(self):
         return 2.0
@@ -4480,7 +4640,7 @@ class Game:
                 continue
             if distance((enemy.x, enemy.y), (self.player.x, self.player.y)) <= radius:
                 enemy.set_ally(
-                    self.biochemist_transmute_duration(),
+                    None,
                     source="ultimate_vector_overdrive",
                     power=self.biochemist_ally_power(),
                 )
@@ -4578,7 +4738,8 @@ class Game:
         if self.player.shockwave_timer < self.player.shockwave_cooldown:
             return False
         self.player.shockwave_timer = 0.0
-        if self.active_ultimate_key() == "vector_overdrive":
+        active_key = self.active_ultimate_key()
+        if active_key == "vector_overdrive":
             for _ in range(self.biochemist_summon_count()):
                 self.spawn_biochemist_ally(source="bio_minions")
             self.pulse_effects.append(
@@ -4591,6 +4752,34 @@ class Game:
                     duration=0.22,
                     width=5,
                     fill_alpha=36,
+                )
+            )
+            return True
+        if active_key == "prismatic_blade":
+            tx, ty = self.blade_skill_target_pos()
+            ang = math.atan2(ty - self.player.y, tx - self.player.x)
+            self.blade_skill_slashes.append(
+                BladeSkillSlash(
+                    self.player.x,
+                    self.player.y,
+                    ang,
+                    speed=self.blade_skill_speed(),
+                    max_distance= 3000,
+                    length=self.blade_skill_length(),
+                    width=self.blade_skill_width(),
+                    damage=self.blade_skill_damage_value(),
+                )
+            )
+            self.pulse_effects.append(
+                PulseEffect(
+                    self.player.x,
+                    self.player.y,
+                    color=(120, 220, 255),
+                    start_radius=18,
+                    end_radius=150,
+                    duration=0.18,
+                    width=5,
+                    fill_alpha=34,
                 )
             )
             return True
@@ -4681,17 +4870,33 @@ class Game:
                         self.damage_boss(proj.damage, source=ally_source)
                         self.projectiles.remove(proj)
             else:
-                if distance((proj.x, proj.y), (self.player.x, self.player.y)) < proj.radius + self.player.radius:
+                ally_hit = None
+                for ally in self.enemies:
+                    if not ally.is_ally or ally.hp <= 0:
+                        continue
+                    if distance((proj.x, proj.y), (ally.x, ally.y)) < proj.radius + ally.radius:
+                        ally_hit = ally
+                        break
+                if ally_hit is not None:
+                    self.damage_ally(ally_hit, max(8, proj.damage))
+                    if proj in self.projectiles:
+                        self.projectiles.remove(proj)
+                elif distance((proj.x, proj.y), (self.player.x, self.player.y)) < proj.radius + self.player.radius:
                     self.damage_player(max(8, proj.damage), source="enemy_projectile")
                     if proj in self.projectiles:
                         self.projectiles.remove(proj)
 
-        for enemy in self.enemies:
+        for enemy in list(self.enemies):
             if enemy.is_ally:
                 continue
-            if distance((enemy.x, enemy.y), (self.player.x, self.player.y)) < enemy.radius + self.player.radius:
-                contact_damage = max(7, int(self.player.max_hp * 0.075))
-                self.damage_player(contact_damage, source="enemy_contact")
+            target_entity, target_is_player = self.get_nearest_target_for_hostile(enemy)
+            contact_damage = max(7, int(self.player.max_hp * 0.075))
+            if target_is_player:
+                if distance((enemy.x, enemy.y), (self.player.x, self.player.y)) < enemy.radius + self.player.radius:
+                    self.damage_player(contact_damage, source="enemy_contact")
+            else:
+                if distance((enemy.x, enemy.y), (target_entity.x, target_entity.y)) < enemy.radius + target_entity.radius:
+                    self.damage_ally(target_entity, contact_damage)
 
         if self.boss is not None:
             if distance((self.boss.x, self.boss.y), (self.player.x, self.player.y)) < self.boss.radius + self.player.radius:
@@ -4786,6 +4991,33 @@ class Game:
             return None
         return min(candidates, key=lambda e: (e.x - px) ** 2 + (e.y - py) ** 2)
 
+    def blade_skill_target_pos(self):
+        if self.boss is not None and self.boss.hp > 0:
+            return self.boss.x, self.boss.y
+
+        hostiles = [enemy for enemy in self.enemies if not enemy.is_ally and enemy.hp > 0]
+        if not hostiles:
+            return pygame.mouse.get_pos()
+
+        cluster_r2 = self.blade_skill_cluster_radius() ** 2
+        px, py = self.player.x, self.player.y
+        best_target = hostiles[0]
+        best_count = -1
+        best_dist2 = float("inf")
+        for anchor in hostiles:
+            count = 0
+            for enemy in hostiles:
+                dx = enemy.x - anchor.x
+                dy = enemy.y - anchor.y
+                if dx * dx + dy * dy <= cluster_r2:
+                    count += 1
+            dist2 = (anchor.x - px) ** 2 + (anchor.y - py) ** 2
+            if count > best_count or (count == best_count and dist2 < best_dist2):
+                best_count = count
+                best_dist2 = dist2
+                best_target = anchor
+        return best_target.x, best_target.y
+
     def get_nearest_hostile_for_ally(self, ally):
         candidates = [enemy for enemy in self.enemies if enemy is not ally and not enemy.is_ally and enemy.hp > 0]
         if self.boss is not None and self.boss.hp > 0:
@@ -4793,6 +5025,20 @@ class Game:
         if not candidates:
             return None
         return min(candidates, key=lambda e: (e.x - ally.x) ** 2 + (e.y - ally.y) ** 2)
+
+    def get_nearest_target_for_hostile(self, hostile):
+        nearest_is_player = True
+        nearest_target = self.player
+        nearest_d2 = (self.player.x - hostile.x) ** 2 + (self.player.y - hostile.y) ** 2
+        for ally in self.enemies:
+            if ally is hostile or not ally.is_ally or ally.hp <= 0:
+                continue
+            d2 = (ally.x - hostile.x) ** 2 + (ally.y - hostile.y) ** 2
+            if d2 < nearest_d2:
+                nearest_d2 = d2
+                nearest_is_player = False
+                nearest_target = ally
+        return nearest_target, nearest_is_player
 
     def spawn_biochemist_ally(self, kind=None, source="bio_minions", duration=None):
         if kind is None:
@@ -4803,7 +5049,7 @@ class Game:
         y = clamp(self.player.y + math.sin(angle) * radius, 40, HEIGHT - 40)
         ally = Enemy(x, y, kind, self.wave)
         ally.set_ally(
-            self.biochemist_summon_duration() if duration is None else duration,
+            duration,
             source=source,
             power=self.biochemist_ally_power(),
         )
@@ -4992,6 +5238,7 @@ class Game:
 
         for enemy in self.enemies:
             hp_before = enemy.hp
+            move_target = (self.player.x, self.player.y)
             ally_target = None
             if enemy.is_ally:
                 target = self.get_nearest_hostile_for_ally(enemy)
@@ -4999,7 +5246,10 @@ class Game:
                     ally_target = (target.x, target.y)
                 else:
                     ally_target = (self.player.x, self.player.y)
-            enemy.update(dt, (self.player.x, self.player.y), self.projectiles, self.wave, ally_target_pos=ally_target)
+            else:
+                nearest_target, _ = self.get_nearest_target_for_hostile(enemy)
+                move_target = (nearest_target.x, nearest_target.y)
+            enemy.update(dt, move_target, self.projectiles, self.wave, ally_target_pos=ally_target)
             burn_damage = max(0.0, hp_before - enemy.hp)
             if burn_damage > 0:
                 self.record_damage_stat(getattr(enemy, "burn_source", "fire_orb_burn"), burn_damage)
@@ -5011,8 +5261,15 @@ class Game:
                         self.damage_enemy(hostile, (22 + self.wave * 0.4) * enemy.ally_power, source=enemy.ally_source)
                 if self.boss is not None and enemy.beam_hits_entity((self.boss.x, self.boss.y), self.boss.radius):
                     self.damage_boss((22 + self.wave * 0.4) * enemy.ally_power, source=enemy.ally_source)
-            if (not enemy.is_ally) and enemy.kind == "tank" and enemy.beam_hits_player((self.player.x, self.player.y)):
-                self.damage_player(22 + self.wave * 0.4, source="tank_beam")
+            if (not enemy.is_ally) and enemy.kind == "tank" and enemy.beam_active > 0:
+                beam_damage = 22 + self.wave * 0.4
+                if enemy.beam_hits_player((self.player.x, self.player.y)):
+                    self.damage_player(beam_damage, source="tank_beam")
+                for ally in list(self.enemies):
+                    if ally is enemy or not ally.is_ally or ally.hp <= 0:
+                        continue
+                    if enemy.beam_hits_entity((ally.x, ally.y), ally.radius):
+                        self.damage_ally(ally, beam_damage)
 
         for enemy in list(self.enemies):
             if enemy.hp <= 0:
@@ -5052,6 +5309,21 @@ class Game:
             proj.update(dt)
             if proj.offscreen():
                 self.projectiles.remove(proj)
+
+        for slash in list(self.blade_skill_slashes):
+            slash.update(dt)
+            for enemy in list(self.enemies):
+                if enemy.is_ally or enemy.hp <= 0 or enemy in slash.hit_enemies:
+                    continue
+                if slash.hits_entity(enemy.x, enemy.y, enemy.radius):
+                    slash.hit_enemies.add(enemy)
+                    self.damage_enemy(enemy, slash.damage, source="blade_skill")
+            if self.boss is not None and self.boss.hp > 0 and not slash.hit_boss:
+                if slash.hits_entity(self.boss.x, self.boss.y, self.boss.radius):
+                    slash.hit_boss = True
+                    self.damage_boss(slash.damage * 0.78, source="blade_skill")
+            if slash.expired():
+                self.blade_skill_slashes.remove(slash)
 
         for rocket in list(self.rockets):
             rocket.update(dt)
@@ -5718,7 +5990,13 @@ class Game:
         shock_ratio = clamp(
             self.player.shockwave_timer / max(0.01, self.player.shockwave_cooldown), 0, 1
         )
-        shock_label = "INVOC (E)" if self.active_ultimate_key() == "vector_overdrive" else "ONDE (E)"
+        active_key = self.active_ultimate_key()
+        if active_key == "vector_overdrive":
+            shock_label = "INVOC (E)"
+        elif active_key == "prismatic_blade":
+            shock_label = "LAME (E)"
+        else:
+            shock_label = "ONDE (E)"
         shock_label_x = shock_rect.x + 10
         shock_label_shadow = self.font.render(shock_label, True, (10, 14, 24))
         shock_label_text = self.font.render(shock_label, True, (120, 220, 255))
@@ -6187,6 +6465,80 @@ class Game:
             hint = self.font.render("Clique pour commencer la partie", True, (145, 190, 220))
             self.screen.blit(hint, (rect.x + 14, rect.bottom - 30))
 
+    def draw_start_screen(self):
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((3, 8, 14, 244))
+        self.screen.blit(overlay, (0, 0))
+        t = pygame.time.get_ticks() * 0.001
+        for i, (cx, cy, r, col) in enumerate(
+            (
+                (WIDTH * 0.18, HEIGHT * 0.22, WIDTH * 0.24, (70, 160, 230)),
+                (WIDTH * 0.82, HEIGHT * 0.78, WIDTH * 0.28, (55, 125, 195)),
+                (WIDTH * 0.66, HEIGHT * 0.18, WIDTH * 0.18, (95, 205, 255)),
+            )
+        ):
+            pulse = 0.85 + 0.15 * math.sin(t * (1.2 + i * 0.32))
+            rr = int(r * pulse)
+            orb = pygame.Surface((rr * 2 + 8, rr * 2 + 8), pygame.SRCALPHA)
+            pygame.draw.circle(orb, (*col, 22), (rr + 4, rr + 4), rr)
+            self.screen.blit(orb, (int(cx - rr - 4), int(cy - rr - 4)))
+
+        panel_rect = self.start_menu_panel_rect()
+        glow = pygame.Surface((panel_rect.width + 44, panel_rect.height + 44), pygame.SRCALPHA)
+        pygame.draw.rect(glow, (120, 220, 255, 24), glow.get_rect(), 14, border_radius=24)
+        pygame.draw.rect(glow, (120, 220, 255, 12), glow.get_rect().inflate(-10, -10), 8, border_radius=20)
+        self.screen.blit(glow, (panel_rect.x - 22, panel_rect.y - 22))
+        pygame.draw.rect(self.screen, (10, 18, 30), panel_rect, border_radius=18)
+        pygame.draw.rect(self.screen, (95, 190, 245), panel_rect, 2, border_radius=18)
+        inner = panel_rect.inflate(-16, -16)
+        pygame.draw.rect(self.screen, (170, 238, 255), inner, 1, border_radius=14)
+
+        title_font = pygame.font.Font(self.font_path, int(clamp(panel_rect.height * 0.12, 38, 62)))
+        subtitle_font = pygame.font.Font(self.font_path, int(clamp(panel_rect.height * 0.055, 18, 26)))
+        play_font = pygame.font.Font(self.font_path, int(clamp(panel_rect.height * 0.09, 30, 44)))
+        quit_font = pygame.font.Font(self.font_path, int(clamp(panel_rect.height * 0.065, 22, 32)))
+
+        title = title_font.render("Tank Survivor", True, (230, 246, 255))
+        self.screen.blit(title, (panel_rect.centerx - title.get_width() / 2, panel_rect.y + int(panel_rect.height * 0.12)))
+        subtitle = subtitle_font.render("Choisis une option pour commencer", True, (185, 216, 236))
+        self.screen.blit(subtitle, (panel_rect.centerx - subtitle.get_width() / 2, panel_rect.y + int(panel_rect.height * 0.28)))
+
+        mouse_pos = pygame.mouse.get_pos()
+        for idx, btn in enumerate(self.ui_buttons):
+            rect = btn["rect"]
+            action = btn["action"]
+            hovered = rect.collidepoint(mouse_pos) or (self.gamepad is not None and idx == self.menu_selected_index)
+            is_play = action == "play"
+            if is_play:
+                color = (24, 66, 98) if hovered else (16, 48, 78)
+                color_inner = (34, 96, 132) if hovered else (24, 74, 110)
+                border = (156, 236, 255) if hovered else (122, 214, 248)
+                text_color = (238, 250, 255)
+                label = play_font.render("Play", True, text_color)
+            else:
+                color = (16, 40, 64) if hovered else (12, 30, 52)
+                color_inner = (24, 58, 88) if hovered else (18, 46, 74)
+                border = (128, 206, 242) if hovered else (100, 176, 220)
+                text_color = (216, 240, 255)
+                label = quit_font.render("Quitter", True, text_color)
+
+            glow = pygame.Surface((rect.width + 18, rect.height + 18), pygame.SRCALPHA)
+            pygame.draw.rect(glow, (*border, 36), glow.get_rect(), 8, border_radius=16)
+            pygame.draw.rect(glow, (*border, 22), glow.get_rect().inflate(-8, -8), 5, border_radius=13)
+            self.screen.blit(glow, (rect.x - 9, rect.y - 9))
+
+            pygame.draw.rect(self.screen, color, rect, border_radius=14)
+            inner_rect = rect.inflate(-8, -8)
+            pygame.draw.rect(self.screen, color_inner, inner_rect, border_radius=10)
+            pygame.draw.rect(self.screen, border, rect, 2, border_radius=14)
+            self.screen.blit(
+                label, (rect.x + rect.width / 2 - label.get_width() / 2, rect.y + rect.height / 2 - label.get_height() / 2)
+            )
+
+        hint_font = pygame.font.Font(self.font_path, int(clamp(panel_rect.height * 0.048, 16, 22)))
+        hint = hint_font.render("Entree / Espace / A (manette) pour valider", True, (152, 188, 214))
+        self.screen.blit(hint, (panel_rect.centerx - hint.get_width() / 2, panel_rect.bottom - int(panel_rect.height * 0.11)))
+
     def draw_game_over(self):
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         overlay.fill((4, 10, 18, 232))
@@ -6295,6 +6647,8 @@ class Game:
             self.boss.draw(self.screen)
         for proj in self.projectiles:
             proj.draw(self.screen)
+        for slash in self.blade_skill_slashes:
+            slash.draw(self.screen)
         for rocket in self.rockets:
             rocket.draw(self.screen)
         for explosion in self.explosions:
@@ -6345,6 +6699,8 @@ class Game:
         self.player.draw(self.screen)
         self.draw_ui()
         self.draw_cheat_buttons()
+        if self.state == "start_menu":
+            self.draw_start_screen()
         if self.state == "upgrade":
             self.draw_upgrade_screen()
         if self.state == "class_select":
@@ -6366,8 +6722,24 @@ class Game:
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_o:
                     self.cheats_enabled = not self.cheats_enabled
                     self.cheat_buttons = []
+                if event.type == pygame.KEYDOWN and self.state in ("start_menu", "class_select", "upgrade", "game_over", "pause"):
+                    if event.key in (pygame.K_LEFT, pygame.K_q, pygame.K_a):
+                        self.move_menu_selection((-1, 0))
+                    elif event.key in (pygame.K_RIGHT, pygame.K_d):
+                        self.move_menu_selection((1, 0))
+                    elif event.key in (pygame.K_UP, pygame.K_z, pygame.K_w):
+                        self.move_menu_selection((0, -1))
+                    elif event.key in (pygame.K_DOWN, pygame.K_s):
+                        self.move_menu_selection((0, 1))
+                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                        action_result = self.activate_selected_menu_button()
+                        if action_result == "quit":
+                            running = False
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    self.toggle_pause()
+                    if self.state == "start_menu":
+                        running = False
+                    else:
+                        self.toggle_pause()
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_a:
                     if self.state == "playing":
                         self.try_activate_ultimate()
@@ -6384,13 +6756,21 @@ class Game:
                             self.try_activate_ultimate()
                         if event.button == self.pad_btn_shockwave:
                             self.try_activate_shockwave()
-                    if self.state in ("class_select", "upgrade", "game_over", "pause"):
+                    if self.state in ("start_menu", "class_select", "upgrade", "game_over", "pause"):
                         if event.button in self.pad_btn_confirm:
                             action_result = self.activate_selected_menu_button()
                             if action_result == "quit":
                                 running = False
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    if self.state == "class_select":
+                    if self.state == "start_menu":
+                        for btn in self.ui_buttons:
+                            if btn["rect"].collidepoint(event.pos):
+                                if btn["action"] == "play":
+                                    self.open_class_select()
+                                else:
+                                    running = False
+                                break
+                    elif self.state == "class_select":
                         for btn in self.ui_buttons:
                             if btn["rect"].collidepoint(event.pos):
                                 self.select_class(btn["class_choice"])
