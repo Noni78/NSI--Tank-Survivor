@@ -1243,7 +1243,7 @@ class Player:
         self.ultimate_cooldown_max = 10.0
         self.vector_overdrive_time = 0.0
         self.shockwave_cooldown = 7.0
-        self.shockwave_timer = self.shockwave_cooldown
+        self.shockwave_timer = 100.0
         self.shockwave_radius = 240
         self.shockwave_damage = 0.9
         self.rocket_level = 0
@@ -1736,10 +1736,12 @@ class UltimateZone:
         self.time_left = duration
         self.tick_interval = tick_interval
         self.tick_timer = 0.0
+        self.spin = random.uniform(0.0, math.tau)
 
     def update(self, dt):
         self.time_left -= dt
         self.tick_timer -= dt
+        self.spin = (self.spin + dt * 2.4) % math.tau
 
     def should_tick(self):
         if self.tick_timer <= 0:
@@ -1750,14 +1752,25 @@ class UltimateZone:
     def draw(self, screen):
         if self.time_left <= 0:
             return
-        t = 1.0 - (self.time_left / self.duration)
-        pulse = 0.85 + 0.15 * math.sin(t * math.tau * 2)
+        ratio = clamp(self.time_left / max(0.001, self.duration), 0.0, 1.0)
+        pulse = 0.97 + 0.03 * math.sin(pygame.time.get_ticks() * 0.006)
         r = int(self.radius * pulse)
-        alpha = int(160 + 60 * (1.0 - t))
-        surf = pygame.Surface((r * 2 + 8, r * 2 + 8), pygame.SRCALPHA)
-        pygame.draw.circle(surf, (255, 220, 80, alpha), (r + 4, r + 4), r, 5)
-        pygame.draw.circle(surf, (255, 245, 170, alpha), (r + 4, r + 4), max(2, r // 8))
-        screen.blit(surf, (int(self.x - r - 4), int(self.y - r - 4)))
+        alpha_outer = int(60 + 35 * ratio)
+        alpha_inner = int(130 + 80 * ratio)
+        
+        surf = pygame.Surface((r * 2 + 40, r * 2 + 40), pygame.SRCALPHA)
+        center = (surf.get_width() // 2, surf.get_height() // 2)
+        
+        pygame.draw.circle(surf, (155, 110, 255, alpha_outer), center, r + 10, 7)
+        pygame.draw.circle(surf, (215, 180, 255, alpha_inner), center, r, 2)
+        
+        for i in range(6):
+            ang = self.spin * 1.5 + i * (math.tau / 6)
+            px = center[0] + math.cos(ang) * (r - 10)
+            py = center[1] + math.sin(ang) * (r - 10)
+            pygame.draw.circle(surf, (238, 215, 255, 180), (int(px), int(py)), 3)
+        
+        screen.blit(surf, (int(self.x - center[0]), int(self.y - center[1])))
 
 
 class UltimatePulse:
@@ -4122,7 +4135,7 @@ class Game:
         panel_w = int(clamp(WIDTH * 0.56, 560, 980))
         panel_h = int(clamp(HEIGHT * 0.56, 380, 640))
         panel_x = (WIDTH - panel_w) / 2
-        panel_y = (HEIGHT - panel_h) / 2
+        panel_y = (HEIGHT - panel_h) / 2 + int(HEIGHT * 0.08)
         return pygame.Rect(panel_x, panel_y, panel_w, panel_h)
 
     def build_start_menu_buttons(self):
@@ -4133,9 +4146,9 @@ class Game:
         play_h = int(clamp(panel.height * 0.16, 62, 90))
         quit_w = int(panel.width * 0.40)
         quit_h = int(clamp(panel.height * 0.12, 48, 70))
-        gap = int(clamp(panel.height * 0.055, 14, 24))
+        gap = 30
         play_x = panel.centerx - play_w / 2
-        play_y = panel.y + int(panel.height * 0.56)
+        play_y = panel.y + int(panel.height * 0.33)
         quit_x = panel.centerx - quit_w / 2
         quit_y = play_y + play_h + gap
         self.ui_buttons.append({"rect": pygame.Rect(play_x, play_y, play_w, play_h), "action": "play"})
@@ -4545,6 +4558,12 @@ class Game:
     def singularity_orbit_speed(self):
         return min(3.0, 1.9 + self.ultimate_boss_level() * 0.04)
 
+    def shockwave_cooldown_value(self):
+        active_key = self.active_ultimate_key()
+        if active_key == "spectral_swarm":
+            return 15.0
+        return self.player.shockwave_cooldown
+
     def try_activate_ultimate(self):
         if self.player.ultimate_charge < self.player.ultimate_max:
             return False
@@ -4735,7 +4754,8 @@ class Game:
         self.ultimate_pulses.append(UltimatePulse(sx, sy, 170, duration=0.35))
 
     def try_activate_shockwave(self):
-        if self.player.shockwave_timer < self.player.shockwave_cooldown:
+        cooldown = self.shockwave_cooldown_value()
+        if self.player.shockwave_timer < cooldown:
             return False
         self.player.shockwave_timer = 0.0
         active_key = self.active_ultimate_key()
@@ -4780,6 +4800,41 @@ class Game:
                     duration=0.18,
                     width=5,
                     fill_alpha=34,
+                )
+            )
+            return True
+        if active_key == "spectral_swarm":
+            zone_radius = int(self.shockwave_radius_value() * 1.5)
+            zone = UltimateZone(
+                self.player.x,
+                self.player.y,
+                radius=zone_radius,
+                duration=7.0,
+                tick_interval=1.0 / 3.0,
+            )
+            self.ultimate_zones.append(zone)
+            self.pulse_effects.append(
+                PulseEffect(
+                    self.player.x,
+                    self.player.y,
+                    color=(155, 110, 255),
+                    start_radius=18,
+                    end_radius=int(max(50, zone_radius * 0.55)),
+                    duration=0.25,
+                    width=6,
+                    fill_alpha=85,
+                )
+            )
+            self.pulse_effects.append(
+                PulseEffect(
+                    self.player.x,
+                    self.player.y,
+                    color=(200, 150, 255),
+                    start_radius=10,
+                    end_radius=int(max(30, zone_radius * 0.35)),
+                    duration=0.15,
+                    width=3,
+                    fill_alpha=100,
                 )
             )
             return True
@@ -5124,9 +5179,10 @@ class Game:
             while self.player.rocket_timer >= self.player.rocket_cooldown:
                 self.player.rocket_timer -= self.player.rocket_cooldown
                 self.fire_rockets()
-        if self.player.shockwave_timer < self.player.shockwave_cooldown:
+        cooldown = self.shockwave_cooldown_value()
+        if self.player.shockwave_timer < cooldown:
             self.player.shockwave_timer = min(
-                self.player.shockwave_cooldown, self.player.shockwave_timer + dt
+                cooldown, self.player.shockwave_timer + dt
             )
         manual_fire = pygame.mouse.get_pressed(num_buttons=3)[0] or keys[pygame.K_SPACE]
         target_pos = pygame.mouse.get_pos()
@@ -5987,14 +6043,17 @@ class Game:
             WIDTH - shock_w - margin, ult_rect.y - shock_h - 18, shock_w, shock_h
         )
         draw_panel(shock_rect, accent_lines=False)
+        cooldown = self.shockwave_cooldown_value()
         shock_ratio = clamp(
-            self.player.shockwave_timer / max(0.01, self.player.shockwave_cooldown), 0, 1
+            self.player.shockwave_timer / max(0.01, cooldown), 0, 1
         )
         active_key = self.active_ultimate_key()
         if active_key == "vector_overdrive":
             shock_label = "INVOC (E)"
         elif active_key == "prismatic_blade":
             shock_label = "LAME (E)"
+        elif active_key == "spectral_swarm":
+            shock_label = "ZONE (E)"
         else:
             shock_label = "ONDE (E)"
         shock_label_x = shock_rect.x + 10
@@ -6483,25 +6542,32 @@ class Game:
             pygame.draw.circle(orb, (*col, 22), (rr + 4, rr + 4), rr)
             self.screen.blit(orb, (int(cx - rr - 4), int(cy - rr - 4)))
 
-        panel_rect = self.start_menu_panel_rect()
-        glow = pygame.Surface((panel_rect.width + 44, panel_rect.height + 44), pygame.SRCALPHA)
-        pygame.draw.rect(glow, (120, 220, 255, 24), glow.get_rect(), 14, border_radius=24)
-        pygame.draw.rect(glow, (120, 220, 255, 12), glow.get_rect().inflate(-10, -10), 8, border_radius=20)
-        self.screen.blit(glow, (panel_rect.x - 22, panel_rect.y - 22))
-        pygame.draw.rect(self.screen, (10, 18, 30), panel_rect, border_radius=18)
-        pygame.draw.rect(self.screen, (95, 190, 245), panel_rect, 2, border_radius=18)
-        inner = panel_rect.inflate(-16, -16)
-        pygame.draw.rect(self.screen, (170, 238, 255), inner, 1, border_radius=14)
-
-        title_font = pygame.font.Font(self.font_path, int(clamp(panel_rect.height * 0.12, 38, 62)))
-        subtitle_font = pygame.font.Font(self.font_path, int(clamp(panel_rect.height * 0.055, 18, 26)))
-        play_font = pygame.font.Font(self.font_path, int(clamp(panel_rect.height * 0.09, 30, 44)))
-        quit_font = pygame.font.Font(self.font_path, int(clamp(panel_rect.height * 0.065, 22, 32)))
-
-        title = title_font.render("Tank Survivor", True, (230, 246, 255))
-        self.screen.blit(title, (panel_rect.centerx - title.get_width() / 2, panel_rect.y + int(panel_rect.height * 0.12)))
-        subtitle = subtitle_font.render("Choisis une option pour commencer", True, (185, 216, 236))
-        self.screen.blit(subtitle, (panel_rect.centerx - subtitle.get_width() / 2, panel_rect.y + int(panel_rect.height * 0.28)))
+        # Grand titre futuriste en haut
+        main_title_font = pygame.font.Font(self.font_path, int(clamp(WIDTH * 0.12, 80, 140)))
+        main_title = "TANK SURVIVOR"
+        title_y = int(HEIGHT * 0.08)
+        
+        # Créer surface de glow
+        title_base = main_title_font.render(main_title, True, (240, 252, 255))
+        glow_surf = pygame.Surface((title_base.get_width() + 40, title_base.get_height() + 40), pygame.SRCALPHA)
+        
+        # Glow bleu décalé
+        glow_color = (100, 200, 255)
+        for offset in range(16, 0, -2):
+            alpha = int(40 * (1 - offset/16))
+            glow_text = main_title_font.render(main_title, True, (*glow_color, alpha))
+            glow_surf.blit(glow_text, (offset // 2 + 20, 20))
+        
+        # Ajouter le texte principal blanc par-dessus
+        title_final = main_title_font.render(main_title, True, (240, 252, 255))
+        glow_surf.blit(title_final, (20, 20))
+        
+        # Afficher le résultat
+        glow_rect = glow_surf.get_rect(center=(WIDTH // 2, title_y + 20))
+        self.screen.blit(glow_surf, glow_rect.topleft)
+        
+        play_font = pygame.font.Font(self.font_path, int(clamp(WIDTH * 0.035, 30, 50)))
+        quit_font = pygame.font.Font(self.font_path, int(clamp(WIDTH * 0.025,  20, 35)))
 
         mouse_pos = pygame.mouse.get_pos()
         for idx, btn in enumerate(self.ui_buttons):
@@ -6534,10 +6600,6 @@ class Game:
             self.screen.blit(
                 label, (rect.x + rect.width / 2 - label.get_width() / 2, rect.y + rect.height / 2 - label.get_height() / 2)
             )
-
-        hint_font = pygame.font.Font(self.font_path, int(clamp(panel_rect.height * 0.048, 16, 22)))
-        hint = hint_font.render("Entree / Espace / A (manette) pour valider", True, (152, 188, 214))
-        self.screen.blit(hint, (panel_rect.centerx - hint.get_width() / 2, panel_rect.bottom - int(panel_rect.height * 0.11)))
 
     def draw_game_over(self):
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
