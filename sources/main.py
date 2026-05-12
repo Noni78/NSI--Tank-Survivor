@@ -4398,8 +4398,19 @@ class Game:
         ]
         test_label = self.font.render("Test", True, (255, 255, 255))
         text_h = test_label.get_height()
-        h = text_h + 12 
-        w = 170
+        h = text_h + 12
+        
+        max_text_width = 0
+        for up in upgrades:
+            label_text = self.upgrade_label_with_level(up)
+            label_surf = self.font.render(label_text, True, (255, 255, 255))
+            max_text_width = max(max_text_width, label_surf.get_width())
+        level_label_surf = self.font.render("Niveau +1", True, (255, 255, 255))
+        max_text_width = max(max_text_width, level_label_surf.get_width())
+        
+        ult_label_surf = self.font.render("ULT Max", True, (255, 255, 255))
+        max_text_width = max(max_text_width, ult_label_surf.get_width())
+        w = max_text_width + 20
         padding = 8
         total_h = (len(upgrades) + 2) * (h + padding) - padding
         x = WIDTH - w - 20
