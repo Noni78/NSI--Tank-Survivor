@@ -3,23 +3,22 @@
 ## Idee de base
 - Jeu d'action/survie en arene (vue du dessus) : survivre a des vagues d'ennemis qui deviennent plus dangereuses.
 - Boucle principale : bouger, tirer, esquiver, recuperer des gemmes XP, choisir des upgrades, battre les boss de palier.
-- Systeme de classes : debut de partie avec choix d'une classe qui definit une competence (E) et une ulti (A).
+- Systeme de classes : debut de partie avec choix d'une classe qui definit une competence qui se recharge avec le temps et un ultimate/ulti qui se recharge en tuant des ennemi
 
 ## Gameplay coeur
 - Deplacements clavier (`ZQSD`/fleches) et manette (stick + D-pad).
 - Tir principal continu avec projectiles multiples selon upgrades.
-- Visée souris/manette, avec auto-ciblage de l'ennemi le plus proche quand le joueur ne vise pas.
+- Visée souris/manette, 
 - Gestion des collisions complete : projectiles, contact, zones, lasers, explosions, invocations.
-- Calculs de degats centralises avec statistiques detaillees par source.
+- Calculs de degats centralises avec statistiques detaillees.
 
 ## Progression du joueur
-- XP via gemmes au sol, niveau qui monte avec palier XP dynamique.
+- XP via gemmes au sol, niveau qui monte avec palier XP
 - A chaque niveau :
 - `+4` degats de base.
-- `+5` PV max (et petit soin instantane).
-- Choix d'upgrade parmi 3 cartes (pool standard + pool epique selon conditions).
-- Charge d'ulti qui se regenere passivement + gagnee sur kills ennemis.
-- Systeme de combo concentration : si aucun degat recu, bonus de degats progressif.
+- `+5` PV max.
+- Choix d'upgrade parmi 3 cartes
+- Charge d'ulti qui se regenere passivement + gagnée sur kills ennemis.
 
 ## Systeme de vagues
 - Vagues progressives avec nombre d'ennemis qui augmente (`18 + 3 * vague`).
@@ -60,26 +59,24 @@
     - Competence : zone de degats continue.
     - Ulti  : `Essaim Spectral` (generation d'eclats traqueurs).
 - `Maitre des abeilles`
-    - Competence : essaim d'abeilles offensif.
-    - Ulti  : `Ruche Royale` (ruche durable avec chaines de degats).
+    - Competence : essaim d'abeilles offensif (30 abeilles).
+    - Ulti  : `Ruche Royale` (ruche qui reste 30).
 - `Maitre spatial`
     - Competence : onde de choc.
-    - Ulti  : `Singularite Neon` (trou noir qui attire puis explose).
+    - Ulti  : `Singularite` (trou noir qui attire les ennemis en faisant des dégats AOE).
 
-## Competences, armes et invocations
-- Tir principal evolutif (cadence, degats, vitesse projectile, multi-tir).
+## Competences, armes 
+- Tir principal qui peut s'améliorer aved plusieurs upgrade(cadence, degats, vitesse projectile, multi-tir).
 - Ricochet des projectiles (rebonds intelligents + attenuation).
-- Orbes de feu orbitaux (impact + brulure).
+- Orbes de feu orbitant autour du player (impact + brulure).
 - Evolution `Cercle de feu` (anneau de brulure autour du joueur).
 - Orbe laser autonome (faisceau periodique sur cibles hostiles).
 - Electroelf (familier qui declenche des frappes de foudre zonees).
 - Lance-roquettes a verrouillage + explosion de zone.
 - Evolution roquettes fragmentation (eclats supplementaires).
-- Invocations/allies :
-- Conversion d'ennemis en allies (tir, beam tank, contact).
-- Ruches qui spawnent des abeilles chasseuses.
+- Concentration (les dégats augmentent avec le temps si aucun dégats reçu)
 
-## Upgrades
+## Upgrades (liste avec les nom exacte danss le jeu)
 - Standards :
 - `Vitesse`
 - `Proj Speed`
@@ -103,7 +100,7 @@
 - `Multishot` : forte augmentation temporaire du nombre de projectiles.
 - `Haste` : vitesse + cadence + degats de tir renforces temporairement.
 - `Heal` : regeneration temporairement amplifiee.
-- Les pickups et gemmes utilisent un comportement magnetique progressif vers le joueur.
+- Les pickups et gemmes sont drop par les ennemis a leur mort
 
 ## Interface et retours visuels
 - HUD complet : PV, cadence/tir, bouclier, roquettes, score, progression de vague/boss.
@@ -116,7 +113,7 @@
 - Panneaux d'analyse de degats (infliges et recus) pendant la partie et en fin de partie.
 
 ## Controles principaux
-- Deplacement : `ZQSD` / fleches.
+- Deplacement : `ZQSD` / fleches / joystick gauche.
 - Tir manuel : clic gauche (ou `Espace`) ; sinon tir auto sur cible proche.
 - Ulti : touche `A` (ou bouton manette associe).
 - Competence de classe : touche `E` (ou bouton manette associe).

@@ -3275,7 +3275,7 @@ DAMAGE_SOURCE_META = {
     "ultimate_vector_overdrive": {"label": "Ulti: Transmutation Hostile", "upgrade_key": None},
     "ultimate_spectral_swarm": {"label": "Ulti: Essaim Spectral", "upgrade_key": None},
     "ultimate_queen_hive": {"label": "Ulti: Ruche Royale", "upgrade_key": None},
-    "ultimate_singularity": {"label": "Ulti: Singularite Neon", "upgrade_key": None},
+    "ultimate_singularity": {"label": "Ulti: Singularite ", "upgrade_key": None},
     "ultimate_zone": {"label": "Zone ultime", "upgrade_key": None},
     "other": {"label": "Autres sources", "upgrade_key": None},
 }
@@ -3342,7 +3342,7 @@ CLASS_POOL = [
         "spatial_master",
         "Maitre spatial",
         "singularity",
-        "Singularite Neon",
+        "Singularite",
         "Trou noir qui attire puis explose.",
     ),
 ]
