@@ -6576,14 +6576,15 @@ class Game:
         pygame.draw.rect(self.screen, (70, 150, 210), cd_slot_rect, 1, border_radius=6)
         # Cooldown "reel": temps restant pendant l'effet actif + cooldown post-effet.
         ult_cooldown_left = max(0.0, self.player.ultimate_beam_time + self.player.ultimate_cooldown)
-        cd_text = self.font.render(f"{ult_cooldown_left:0.1f}s", True, text_soft)
-        self.screen.blit(
-            cd_text,
-            (
-                cd_slot_rect.centerx - cd_text.get_width() / 2,
-                cd_slot_rect.centery - cd_text.get_height() / 2,
-            ),
-        )
+        if ult_cooldown_left > 0.05:
+            cd_text = self.font.render(f"{ult_cooldown_left:0.1f}s", True, text_soft)
+            self.screen.blit(
+                cd_text,
+                (
+                    cd_slot_rect.centerx - cd_text.get_width() / 2,
+                    cd_slot_rect.centery - cd_text.get_height() / 2,
+                ),
+            )
 
         ult_bar_x = cd_slot_rect.right + 8
         ult_bar_w = ult_rect.right - ult_bar_x - 10
@@ -6853,9 +6854,19 @@ class Game:
                         1,
                     )
             elif class_choice.ultimate_key == "prismatic_blade":
-                inner_radius = span * 0.18
-                sword_len = span * 0.74
-                sword_w = max(14, int(span * 0.12))
+                scale = 1.0 / 3.0
+                hilt_ratio = 0.22
+                # Reprise des parametres de l'ulti (meme logique), puis reduction au tiers.
+                ulti_sword_len = min(WIDTH * 0.74, WIDTH * 0.5 + self.ultimate_boss_level() * 36.0)
+                ulti_beam_w = self.prismatic_blade_width()
+                ulti_reach = math.hypot(WIDTH, HEIGHT) * 0.58
+                ulti_inner_radius = max(108.0, min(180.0, ulti_reach * 0.14))
+                ulti_player_clearance = 120.0
+
+                sword_len = ulti_sword_len * scale
+                sword_w = max(4.0, ulti_beam_w * scale)
+                hilt_len = sword_len * hilt_ratio
+                inner_radius = max(ulti_inner_radius * scale, hilt_len + ulti_player_clearance * scale)
                 for i in range(3):
                     ang = t * 2.9 + i * (math.tau / 3) + 0.2 * math.sin(t * 2.4 + i)
                     sx = cx + math.cos(ang) * inner_radius
@@ -6868,7 +6879,7 @@ class Game:
                         sword_len,
                         sword_w,
                         0.92,
-                        hilt_ratio=0.22,
+                        hilt_ratio=hilt_ratio,
                     )
             elif class_choice.ultimate_key == "vector_overdrive":
                 r = span * 0.26
