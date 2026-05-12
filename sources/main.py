@@ -3423,7 +3423,7 @@ class Game:
         self.gamepad_aim_axes = (2, 3)
         self.pad_btn_ulti = 3
         self.pad_btn_shockwave = 2
-        self.pad_btn_pause = {7, 9}
+        self.pad_btn_pause = {6, 7}
         self.pad_btn_confirm = {0, 1}
         self.menu_selected_index = 0
         self.menu_nav_hold = (0, 0)
@@ -3446,14 +3446,25 @@ class Game:
             js.init()
         self.gamepad = js
         self.gamepad_name = js.get_name().lower()
+        button_count = js.get_numbuttons()
+        hat_count = js.get_numhats()
         self.pad_btn_ulti = 3
         self.pad_btn_shockwave = 2
-        self.pad_btn_pause = {7, 9}
+        self.pad_btn_pause = {6, 7}
         self.pad_btn_confirm = {0, 1}
-        if "switch" in self.gamepad_name or "nintendo" in self.gamepad_name:
+        is_switch_profile = ("switch" in self.gamepad_name) or ("nintendo" in self.gamepad_name)
+        is_8bitdo = "8bitdo" in self.gamepad_name
+        # 8BitDo can expose multiple layouts depending on hardware mode.
+        # In Switch mode with pygame 2.x it commonly looks like:
+        # 16 buttons, 0 hats, dpad as buttons 11..14.
+        if is_8bitdo and not is_switch_profile and button_count >= 16 and hat_count == 0:
+            is_switch_profile = True
+        if is_switch_profile:
             self.pad_btn_ulti = 2
             self.pad_btn_shockwave = 3
-            self.pad_btn_pause = {9, 7}
+            # Nintendo Switch Pro Controller (pygame 2.x):
+            # '+' is button 6, '-' is button 4.
+            self.pad_btn_pause = {6, 4}
             self.pad_btn_confirm = {1, 0}
         self.calibrate_gamepad_axes()
 
@@ -4092,15 +4103,15 @@ class Game:
     def build_class_select_buttons(self):
         self.ui_buttons = []
         self.menu_selected_index = 0
-        panel_w = int(WIDTH * 0.84)
-        panel_h = int(HEIGHT * 0.68)
+        panel_w = int(WIDTH * 0.90)
+        panel_h = int(HEIGHT * 0.76)
         panel_x = (WIDTH - panel_w) / 2
         panel_y = (HEIGHT - panel_h) / 2
-        gap = 26
+        gap = 22
         count = max(1, len(self.class_choices))
         card_w = (panel_w - gap * (count + 1)) / count
-        card_h = panel_h - 92
-        card_y = panel_y + 64
+        card_h = panel_h - 80
+        card_y = panel_y + 56
         for i, class_choice in enumerate(self.class_choices):
             card_x = panel_x + gap + i * (card_w + gap)
             rect = pygame.Rect(card_x, card_y, card_w, card_h)
@@ -6543,7 +6554,7 @@ class Game:
         self.screen.blit(lvl_shadow, (lvl_x + 1, lvl_y + 1))
         self.screen.blit(lvl_text, (lvl_x, lvl_y))
 
-        ult_w = 300
+        ult_w = 340
         ult_h = 34
         ult_rect = pygame.Rect(WIDTH - ult_w - margin, HEIGHT - ult_h - 14, ult_w, ult_h)
         draw_panel(ult_rect)
@@ -6557,17 +6568,26 @@ class Game:
         ult_label_y = ult_rect.y + ult_h / 2 - ult_label_text.get_height() / 2
         self.screen.blit(ult_label_shadow, (ult_label_x + 1, ult_label_y + 1))
         self.screen.blit(ult_label_text, (ult_label_x, ult_label_y))
-        ult_label_w = 92
-        ult_bar_x = ult_rect.x + ult_label_w
+        ult_label_w = 86
+        cd_slot_w = 56
+        cd_slot_x = ult_rect.x + ult_label_w
+        cd_slot_rect = pygame.Rect(cd_slot_x, ult_rect.y + 6, cd_slot_w, ult_h - 12)
+        pygame.draw.rect(self.screen, (12, 22, 38), cd_slot_rect, border_radius=6)
+        pygame.draw.rect(self.screen, (70, 150, 210), cd_slot_rect, 1, border_radius=6)
+        # Cooldown "reel": temps restant pendant l'effet actif + cooldown post-effet.
+        ult_cooldown_left = max(0.0, self.player.ultimate_beam_time + self.player.ultimate_cooldown)
+        cd_text = self.font.render(f"{ult_cooldown_left:0.1f}s", True, text_soft)
+        self.screen.blit(
+            cd_text,
+            (
+                cd_slot_rect.centerx - cd_text.get_width() / 2,
+                cd_slot_rect.centery - cd_text.get_height() / 2,
+            ),
+        )
+
+        ult_bar_x = cd_slot_rect.right + 8
         ult_bar_w = ult_rect.right - ult_bar_x - 10
         draw_bar(ult_bar_x, ult_rect.y + 12, ult_bar_w, 10, ult_ratio, ult_color)
-
-        if self.player.ultimate_cooldown > 0:
-            cooldown_text = self.font.render(f"{self.player.ultimate_cooldown:.1f}", True, text_soft)
-            self.screen.blit(
-                cooldown_text,
-                (ult_rect.right - cooldown_text.get_width() - 10, ult_rect.y + 12),
-            )
 
         shock_w = 240
         shock_h = 28
@@ -6703,8 +6723,8 @@ class Game:
         overlay.fill((4, 10, 18, 232))
         self.screen.blit(overlay, (0, 0))
 
-        panel_w = int(WIDTH * 0.84)
-        panel_h = int(HEIGHT * 0.68)
+        panel_w = int(WIDTH * 0.90)
+        panel_h = int(HEIGHT * 0.76)
         panel_x = (WIDTH - panel_w) / 2
         panel_y = (HEIGHT - panel_h) / 2
         panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
@@ -6719,12 +6739,36 @@ class Game:
 
         title = self.big_font.render("Choisis ta classe", True, (220, 242, 255))
         self.screen.blit(title, (panel_rect.centerx - title.get_width() / 2, panel_rect.y + 16))
-        subtitle = self.font.render(
-            "Ulti unique par classe.",
-            True,
-            (175, 212, 236),
-        )
-        self.screen.blit(subtitle, (panel_rect.centerx - subtitle.get_width() / 2, panel_rect.y + 48))
+
+        def draw_wrapped_text(text, x, y, max_width, color, max_lines=2, line_spacing=3):
+            words = text.split()
+            lines = []
+            current = ""
+            for word in words:
+                candidate = word if not current else f"{current} {word}"
+                if self.font.size(candidate)[0] <= max_width:
+                    current = candidate
+                    continue
+                if current:
+                    lines.append(current)
+                current = word
+            if current:
+                lines.append(current)
+
+            if len(lines) > max_lines:
+                lines = lines[:max_lines]
+                last = lines[-1]
+                while last and self.font.size(last + "...")[0] > max_width:
+                    last = last[:-1]
+                lines[-1] = (last.rstrip() + "...") if last else "..."
+
+            line_h = self.font.get_height()
+            for idx, line in enumerate(lines):
+                surf = self.font.render(line, True, color)
+                self.screen.blit(surf, (x, y + idx * (line_h + line_spacing)))
+            if not lines:
+                return 0
+            return len(lines) * line_h + (len(lines) - 1) * line_spacing
 
         def draw_class_preview(img_rect, class_choice):
             preview = pygame.Surface((img_rect.width, img_rect.height), pygame.SRCALPHA)
@@ -6809,46 +6853,23 @@ class Game:
                         1,
                     )
             elif class_choice.ultimate_key == "prismatic_blade":
-                total_len = span * 0.72
-                beam_w = max(14, int(span * 0.12))
                 inner_radius = span * 0.18
+                sword_len = span * 0.74
+                sword_w = max(14, int(span * 0.12))
                 for i in range(3):
                     ang = t * 2.9 + i * (math.tau / 3) + 0.2 * math.sin(t * 2.4 + i)
                     sx = cx + math.cos(ang) * inner_radius
                     sy = cy + math.sin(ang) * inner_radius
-                    ex = sx + math.cos(ang) * total_len
-                    ey = sy + math.sin(ang) * total_len
-                    dx = ex - sx
-                    dy = ey - sy
-                    seg_len = math.hypot(dx, dy) or 1.0
-                    ux, uy = dx / seg_len, dy / seg_len
-                    px, py = -uy, ux
-
-                    pygame.draw.line(preview, (120, 55, 180, 115), (sx + px * beam_w * 0.7, sy + py * beam_w * 0.7), (sx + ux * total_len * 0.55, sy + uy * total_len * 0.55), max(6, int(beam_w * 0.38)))
-                    pygame.draw.line(preview, (220, 180, 255, 165), (sx + px * beam_w * 0.7, sy + py * beam_w * 0.7), (sx + ux * total_len * 0.55, sy + uy * total_len * 0.55), 2)
-                    pygame.draw.line(preview, (150, 222, 255, 125), (sx, sy), (ex, ey), max(5, int(beam_w * 0.34)))
-                    pygame.draw.line(preview, (250, 252, 255, 210), (sx, sy), (ex, ey), 2)
-
-                    tip_x = sx + ux * total_len
-                    tip_y = sy + uy * total_len
-                    mid_x = sx + ux * total_len * 0.72
-                    mid_y = sy + uy * total_len * 0.72
-                    near_tip_x = sx + ux * total_len * 0.92
-                    near_tip_y = sy + uy * total_len * 0.92
-                    blade_w = beam_w * 0.82
-                    blade_mid_w = blade_w * 0.76
-                    blade_near_tip_w = blade_w * 0.56
-                    blade_pts = [
-                        (int(sx + px * blade_w), int(sy + py * blade_w)),
-                        (int(mid_x + px * blade_mid_w), int(mid_y + py * blade_mid_w)),
-                        (int(near_tip_x + px * blade_near_tip_w), int(near_tip_y + py * blade_near_tip_w)),
-                        (int(tip_x), int(tip_y)),
-                        (int(near_tip_x - px * blade_near_tip_w), int(near_tip_y - py * blade_near_tip_w)),
-                        (int(mid_x - px * blade_mid_w), int(mid_y - py * blade_mid_w)),
-                        (int(sx - px * blade_w), int(sy - py * blade_w)),
-                    ]
-                    pygame.draw.polygon(preview, (105, 205, 255, 180), blade_pts)
-                    pygame.draw.polygon(preview, (228, 246, 255, 220), blade_pts, 2)
+                    draw_sword(
+                        preview,
+                        sx,
+                        sy,
+                        ang,
+                        sword_len,
+                        sword_w,
+                        0.92,
+                        hilt_ratio=0.22,
+                    )
             elif class_choice.ultimate_key == "vector_overdrive":
                 r = span * 0.26
                 pulse = 0.9 + 0.1 * math.sin(t * 6.5)
@@ -7039,14 +7060,29 @@ class Game:
             )
             self.screen.blit(ulti, (rect.x + 14, rect.y + 54))
 
-            img_rect = pygame.Rect(rect.x + 14, rect.y + 82, rect.width - 28, min(300, rect.height - 150))
+            content_top = rect.y + 82
+            desc_line_h = self.font.get_height()
+            desc_max_h = desc_line_h * 2 + 3
+            hint_h = self.font.get_height()
+            bottom_padding = 14
+            preview_h = rect.height - (content_top - rect.y) - desc_max_h - hint_h - bottom_padding - 12
+            preview_h = int(clamp(preview_h, 210, 494))
+            img_rect = pygame.Rect(rect.x + 14, content_top, rect.width - 28, preview_h)
             draw_class_preview(img_rect, class_choice)
 
-            desc = self.font.render(class_choice.desc, True, (170, 202, 226))
-            self.screen.blit(desc, (rect.x + 14, img_rect.bottom + 10))
+            desc_y = img_rect.bottom + 8
+            draw_wrapped_text(
+                class_choice.desc,
+                rect.x + 14,
+                desc_y,
+                rect.width - 28,
+                (170, 202, 226),
+                max_lines=2,
+            )
 
             hint = self.font.render("Clique pour commencer la partie", True, (145, 190, 220))
-            self.screen.blit(hint, (rect.x + 14, rect.bottom - 30))
+            hint_y = rect.bottom - hint.get_height() - 10
+            self.screen.blit(hint, (rect.x + 14, hint_y))
 
     def draw_start_screen(self):
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
