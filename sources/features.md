@@ -15,68 +15,68 @@
 ## Progression du joueur
 - XP via gemmes au sol, niveau qui monte avec palier XP
 - A chaque niveau :
-- `+4` degats de base.
+- `+4` dégâts de base.
 - `+5` PV max.
 - Choix d'upgrade parmi 3 cartes
-- Charge d'ulti qui se regenere passivement + gagnée sur kills ennemis.
+- Charge d'ulti qui se régénère passivement + gagnée sur kills ennemis.
 
-## Systeme de vagues
+## Système de vagues
 - Vagues progressives avec nombre d'ennemis qui augmente (`18 + 3 * vague`).
-- Spawn en deux temps : une partie immediate, le reste echelonné sur un intervalle.
+- Spawn en deux temps : une partie immédiate, le reste échelonné sur un intervalle.
 - Condition de fin de vague : plus d'ennemis hostiles, pas de boss, plus de spawn en attente.
-- Transition de fin de vague : aspiration acceleree des gemmes, puis upgrade(s) et vague suivante.
+- Transition de fin de vague : aspiration accélérée des gemmes, puis upgrade(s) et vague suivante.
 - Tous les 5 niveaux : apparition d'un boss.
-- Pendant un combat de boss : spawns additionnels reguliers d'ennemis standards.
-- Mort du boss : nettoyage des ennemis restants, pluie massive de gemmes, boost de puissance "post-boss" pour les competences ultimes.
+- Pendant un combat de boss : spawns additionnels réguliers d'ennemis standards.
+- Mort du boss : nettoyage des ennemis restants, pluie massive de gemmes, boost de puissance "post-boss" pour les compétences ultimes.
 
 ## Ennemis
-- 4 archetypes :
+- 4 archétypes :
 - `basic` : profil standard.
-- `fast` : tres rapide, peu de PV.
+- `fast` : très rapide, peu de PV.
 - `tank` : lent, beaucoup de PV, rayon laser charge -> tir.
 - `shooter` : tire des projectiles.
-- Mise a l'echelle avec la vague : PV/vitesse/pression offensive augmentent.
+- Mise a l'échelle avec la vague : PV/vitesse/pression offensive augmentent.
 
 ## Boss
-- Boss tous les 5 niveaux, avec grosse reserve de PV.
+- Boss tous les 5 niveaux, avec grosse réserve de PV.
 - Rotation entre 3 patterns :
-    - Multi-lasers rotatifs.
+    - Multi lasers rotatifs.
     - Salves de projectiles.
     - Zones explosives sur la position du joueur
-- les patterns gagnent en intensite selon % de vie
+- les patterns gagnent en intensité selon % de vie
 
 ## Classes
 - `Maitre des Lasers`
-    - Competence : laser spatial apres courte charge, transperce en ligne.
-    - Ulti : `Constellations Laser` (reseau de noeuds + segments laser persistants).
+    - Compétence : laser spatial après courte charge, transperce en ligne.
+    - Ulti : `Constellations Laser` (réseau de nœuds + segments laser persistants).
 - `Maitre de la lame`
-    - Competence  : lame geante tirée la ou il y a le plus d'ennemi
+    - Compétence  : lame géante tirée la ou il y a le plus d'ennemi
     - Ulti  : `Lame Prismatique` (3 lame qui orbite autour du player).
 - `Biochimiste fou`
-    - Competence : invocations chimiques (ennemis convertis/allies temporaires).
+    - Compétence : invocations chimiques (ennemis convertis/allies temporaires).
     - Ulti  : `Transmutation Hostile` (conversion de masse des ennemis proches).
-- `Maitre des eclats`
-    - Competence : zone de degats continue.
-    - Ulti  : `Essaim Spectral` (generation d'eclats traqueurs).
+- `Maitre des éclats`
+    - Compétence : zone de dégâts continue.
+    - Ulti  : `Essaim Spectral` (génération d'éclats traqueurs).
 - `Maitre des abeilles`
-    - Competence : essaim d'abeilles offensif (30 abeilles).
+    - Compétence : essaim d'abeilles offensif (30 abeilles).
     - Ulti  : `Ruche Royale` (ruche qui reste 30).
 - `Maitre spatial`
-    - Competence : onde de choc.
-    - Ulti  : `Singularite` (trou noir qui attire les ennemis en faisant des dégats AOE).
+    - Compétence : onde de choc.
+    - Ulti  : `Singularite` (trou noir qui attire les ennemis en faisant des dégâts AOE).
 
-## Competences, armes 
-- Tir principal qui peut s'améliorer aved plusieurs upgrade(cadence, degats, vitesse projectile, multi-tir).
-- Ricochet des projectiles (rebonds intelligents + attenuation).
+## Compétences, armes 
+- Tir principal qui peut s'améliorer avec plusieurs upgrade (cadence, dégâts, vitesse projectile, multi-tir).
+- Ricochet des projectiles (rebonds intelligents + atténuation).
 - Orbes de feu orbitant autour du player (impact + brulure).
 - Evolution `Cercle de feu` (anneau de brulure autour du joueur).
-- Orbe laser autonome (faisceau periodique sur cibles hostiles).
-- Electroelf (familier qui declenche des frappes de foudre zonees).
+- Orbe laser autonome (faisceau périodique sur ennemis).
+- Electroelf (familier qui declenche des frappes de foudre AOE).
 - Lance-roquettes a verrouillage + explosion de zone.
-- Evolution roquettes fragmentation (eclats supplementaires).
-- Concentration (les dégats augmentent avec le temps si aucun dégats reçu)
+- Evolution roquettes fragmentation (éclats supplémentaires).
+- Concentration (les dégâts augmentent avec le temps si aucun dégâts reçu)
 
-## Upgrades (liste avec les nom exacte danss le jeu)
+## Upgrades (liste avec les noms exacts dans le jeu)
 - Standards :
 - `Vitesse`
 - `Proj Speed`
@@ -89,7 +89,7 @@
 - `Orbe de feu`
 - `Bouclier`
 - `Lance roquette`
-- Epiques / evolutions :
+- Epiques / évolutions :
 - `Orbe laser`
 - `Electroelf`
 - `EVO: Cercle de feu+`
@@ -98,19 +98,19 @@
 ## Pickups temporaires
 - `Shield` : bouclier absorbant.
 - `Multishot` : forte augmentation temporaire du nombre de projectiles.
-- `Haste` : vitesse + cadence + degats de tir renforces temporairement.
-- `Heal` : regeneration temporairement amplifiee.
+- `Haste` : vitesse + cadence + dégâts de tir renforces temporairement.
+- `Heal` : régénération temporairement amplifiée.
 - Les pickups et gemmes sont drop par les ennemis a leur mort
 
 ## Interface et retours visuels
 - HUD complet : PV, cadence/tir, bouclier, roquettes, score, progression de vague/boss.
 - Barre XP + niveau.
 - Barre ulti (A) + cooldown.
-- Barre competence (E) contextuelle selon classe active.
-- Affichage des buffs temporaires avec timer visuel.
-- Nombres de degats flottants et effets de pulse/explosion/laser/zone.
-- Ecrans dedies : menu de depart, selection de classe, choix d'upgrade, game over.
-- Panneaux d'analyse de degats (infliges et recus) pendant la partie et en fin de partie.
+- Barre compétence (E) contextuelle selon classe active.
+- Affichage des buffs temporaires avec timer visuel (upgrade pickup).
+- Nombres de dégâts flottants et effets de pulse/explosion/laser/zone.
+- Ecrans dédies : menu de départ, sélection de classe, choix d'upgrade, game over.
+- Panneaux d'analyse de dégâts (infliges et reçus) pendant la partie et en fin de partie.
 
 ## Controles principaux
 - Deplacement : `ZQSD` / fleches / joystick gauche.
