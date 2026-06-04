@@ -6560,7 +6560,7 @@ class Game:
         draw_panel(ult_rect)
         ult_ratio = clamp(self.player.ultimate_charge / max(1, self.player.ultimate_max), 0, 1)
         ult_color = (170, 240, 255) if ult_ratio >= 1 else (95, 145, 175)
-        ult_label = "ULT (A)"
+        ult_label = "ULT (X)"
         ult_label_x = ult_rect.x + 10
         ult_label_color = (170, 240, 255) if ult_ratio >= 1 else (106, 170, 205)
         ult_label_shadow = self.font.render(ult_label, True, (10, 14, 24))
@@ -6602,17 +6602,17 @@ class Game:
         )
         active_key = self.active_ultimate_key()
         if active_key == "vector_overdrive":
-            shock_label = "INVOC (E)"
+            shock_label = "INVOC (Y)"
         elif active_key == "prismatic_blade":
-            shock_label = "LAME (E)"
+            shock_label = "LAME (Y)"
         elif active_key == "spectral_swarm":
-            shock_label = "ZONE (E)"
+            shock_label = "ZONE (Y)"
         elif active_key == "queen_hive":
-            shock_label = "ESSAIM (E)"
+            shock_label = "ESSAIM (Y)"
         elif active_key == "constellation_laser":
-            shock_label = "LASER (E)"
+            shock_label = "LASER (Y)"
         else:
-            shock_label = "ONDE (E)"
+            shock_label = "ONDE (Y)"
         shock_label_x = shock_rect.x + 10
         shock_label_shadow = self.font.render(shock_label, True, (10, 14, 24))
         shock_label_text = self.font.render(shock_label, True, (120, 220, 255))
